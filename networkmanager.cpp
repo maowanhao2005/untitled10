@@ -31,11 +31,13 @@ NetworkManager::NetworkManager(QObject *parent, const QString &username)
     connect(tcpServer, &TCPServer::messageReceived, this, &NetworkManager::onTCPMessageReceived);
 }
 
+// 在 networkmanager.cpp 中
 void NetworkManager::sendMessageToAllPeers(const QString &message) {
     QString fullMessage = QString("[%1]: %2").arg(localUsername).arg(message);
     for (auto it = peers.begin(); it != peers.end(); ++it) {
-        TCPClient client;
-        client.sendMessage(it.value().ip, chatPort, fullMessage);
+        TCPClient *client = new TCPClient(this); // parent = this，避免内存泄漏
+        connect(client, &TCPClient::destroyed, client, &QObject::deleteLater); // 可选，确保清理
+        client->sendMessage(it.value().ip, chatPort, fullMessage);
     }
 }
 
