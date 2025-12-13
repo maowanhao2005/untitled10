@@ -1,0 +1,75 @@
+# CLion
+/.idea/
+cmake-build-*/
+*.iws
+*.iml
+*.ipr
+out/
+
+# Qt
+*.pro.user
+*.pro.user.*
+build-*/
+*.autosave
+*.qmake.cache
+*.qmake.stash
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+_deps/
+*.cmake
+*.ninja
+.ninja_deps
+.ninja_log
+
+# 编译输出
+bin/
+lib/
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.exe
+*.app
+ChatClient
+ChatServer
+
+# Qt生成的文件
+moc_*.cpp
+moc_*.cxx
+qrc_*.cpp
+ui_*.h
+*.moc
+moc_predefs.h
+*_autogen/
+*.qrc
+*.qmlc
+*.jsc
+*.qm
+
+# 调试文件
+*.pdb
+*.idb
+*.ilk
+*.map
+*.exp
+*.dSYM/
+*.su
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+~$*
+
+# 日志
+*.log
