@@ -7,5 +7,5 @@ int main(int argc, char *argv[]) {
     ChatWindow window;
     window.show();
 
-    return app.exec();
+    return QApplication::exec();
 }
