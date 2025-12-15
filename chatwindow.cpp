@@ -180,12 +180,7 @@ void ChatWindow::setupUI() {
     connect(sendButton, &QPushButton::clicked, this, &ChatWindow::onSendMessage);
 
     // 欢迎消息
-    chatHistory->append("💬 欢迎使用P2P聊天室！");
-    chatHistory->append("✨ 支持表情包功能：");
-    chatHistory->append("   1. 点击😊按钮选择表情");
-    chatHistory->append("   2. 输入表情代码如 :) → 😊, :D → 😄, <3 → ❤️");
-    chatHistory->append("   3. 按回车或点击发送按钮发送消息");
-    chatHistory->append("");
+
 }
 
 void ChatWindow::createEmojiMenu() {
