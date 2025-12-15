@@ -11,6 +11,12 @@
 #include <QLabel>
 #include <QInputDialog>
 #include <QTimer>
+#include <QToolButton>
+#include <QMenu>
+#include <QGridLayout>
+#include <QScrollArea>
+#include <QFont>
+#include <QMap>
 #include "networkmanager.h"
 
 QT_BEGIN_NAMESPACE
@@ -28,20 +34,33 @@ private slots:
     void onSendMessage();
     void onMessageReceived(const QString &message);
     void onPeerDiscovered(const QString &ip, const QString &username);
+    void insertEmoji(const QString &emoji);
 
 private:
     void setupUI();
     void setupConnections();
+    void createEmojiMenu();
+    void initEmojiMap();
+    QString processMessageWithEmojis(const QString &message);
 
     QVBoxLayout *mainLayout;
     QTextEdit *chatHistory;
     QLineEdit *messageInput;
     QPushButton *sendButton;
+    QToolButton *emojiButton;
     QListWidget *onlineUsersList;
     QLabel *statusLabel;
 
+    QMenu *emojiMenu;
+
     NetworkManager *networkManager;
     QString username;
+
+    // 表情映射：文本代码 -> 表情符号
+    QMap<QString, QString> emojiMap;
+
+    // 常用表情列表
+    QStringList commonEmojis;
 };
 
 #endif // CHATWINDOW_H
