@@ -70,6 +70,12 @@ private:
     void loadUserAvatar();
     void saveUserAvatar(const QString &avatarPath);
     QString getAvatarStoragePath();
+
+    // 添加用户头像缓存
+    QMap<QString, QPixmap> userAvatars;  // 用户名 -> 头像映射
+    // 添加新的方法
+    QString extractUsernameFromMessage(const QString &message);
+    QPixmap getUserAvatar(const QString &username);
 };
 
 #endif // CHATWINDOW_H
