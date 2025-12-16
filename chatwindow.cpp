@@ -188,6 +188,7 @@ void ChatWindow::setupUI() {
     fileButton->setToolTip("发送文件");
 
     // 表情按钮
+
     emojiButton = new QToolButton(this);
     emojiButton->setText("😊");
     emojiButton->setToolTip("选择表情包");
@@ -322,7 +323,6 @@ void ChatWindow::createEmojiMenu() {
         QString emoji = commonEmojis[i];
         connect(emojiBtn, &QPushButton::clicked, this, [this, emoji]() {
             insertEmoji(emoji);
-            emojiMenu->close();
         });
 
         gridLayout->addWidget(emojiBtn, i / columns, i % columns);
@@ -359,6 +359,14 @@ void ChatWindow::createEmojiMenu() {
 
     emojiButton->setMenu(emojiMenu);
     emojiButton->setPopupMode(QToolButton::InstantPopup);
+
+    // 关键修改：连接菜单.aboutToHide()信号，阻止自动隐藏
+    connect(emojiMenu, &QMenu::aboutToHide, this, [this]() {
+        // 阻止菜单自动隐藏
+        if (emojiMenu->isVisible()) {
+            // 可以在这里添加其他逻辑，如果需要的话
+        }
+    });
 }
 
 void ChatWindow::setupConnections() {
@@ -1231,3 +1239,4 @@ QString ChatWindow::generateThumbnail(const QByteArray &fileData, bool isImage) 
 
     return QString::fromLatin1(thumbData.toBase64().data());
 }
+
