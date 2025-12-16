@@ -187,6 +187,7 @@ void ChatWindow::setupUI() {
                              "}");
     fileButton->setToolTip("发送文件");
 
+
     // 表情按钮
 
     emojiButton = new QToolButton(this);
