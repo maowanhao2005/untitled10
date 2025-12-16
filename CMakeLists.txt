@@ -29,6 +29,8 @@ add_executable(untitled10 main.cpp
         tcpserver.h
         tcpclient.cpp
         tcpclient.h
+        loginwindow.h
+        loginwindow.cpp
 )
 target_link_libraries(untitled10
         Qt::Core
