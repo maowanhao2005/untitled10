@@ -49,6 +49,8 @@ private slots:
 
     void saveReceivedFile(const QString &sender, const QString &filename);
 
+    QString generateThumbnail(const QByteArray &fileData, bool isImage);
+
 private:
     void setupUI();
     void setupConnections();

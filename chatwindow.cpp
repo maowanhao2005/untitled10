@@ -428,8 +428,8 @@ void ChatWindow::onMessageReceived(const QString &message) {
 }
 
 void ChatWindow::handleFileMessage(const QString &message) {
-    // 解析文件消息
-    // 格式: [用户名]: [FILE]文件名[FILENAME]扩展名[FILEEXTENSION]文件类型[FILETYPE]文件大小[FILESIZE]文件数据[FILEDATA]base64数据
+     // 解析文件消息
+    // 格式: [用户名]: [FILE]文件名[FILENAME]扩展名[FILEEXTENSION]文件类型[FILETYPE]文件大小[FILESIZE]文件数据[FILEDATA]base64数据[/FILE]
 
     int startBracket = message.indexOf('[');
     int endBracket = message.indexOf(']');
@@ -441,15 +441,27 @@ void ChatWindow::handleFileMessage(const QString &message) {
     int filetypeStart = message.indexOf("[FILETYPE]");
     int filesizeStart = message.indexOf("[FILESIZE]");
     int filedataStart = message.indexOf("[FILEDATA]");
+    int fileEnd = message.indexOf("[/FILE]");
 
     if (fileStart >= 6 && filenameStart > fileStart && extensionStart > filenameStart &&
-        filetypeStart > extensionStart && filesizeStart > filetypeStart && filedataStart > filesizeStart) {
+        filetypeStart > extensionStart && filesizeStart > filetypeStart && filedataStart > filesizeStart && fileEnd > filedataStart) {
 
         QString fileName = message.mid(fileStart, filenameStart - fileStart);
         QString fileExtension = message.mid(filenameStart + 10, extensionStart - filenameStart - 10);  // 10 是 "[FILENAME]" 的长度
         QString fileType = message.mid(extensionStart + 15, filetypeStart - extensionStart - 15);  // 15 是 "[FILEEXTENSION]" 的长度
         QString fileSizeStr = message.mid(filetypeStart + 10, filesizeStart - filetypeStart - 10);  // 10 是 "[FILETYPE]" 的长度
-        QString fileDataBase64 = message.mid(filedataStart + 10);  // 10 是 "[FILEDATA]" 的长度
+
+        // 提取文件数据部分
+        QString filePart = message.mid(filedataStart + 10, fileEnd - filedataStart - 10);  // 10 是 "[FILEDATA]" 的长度
+        int thumbnailPos = filePart.indexOf("[THUMBNAIL]");
+        QString fileDataBase64, thumbnailBase64;
+
+        if (thumbnailPos != -1) {
+            fileDataBase64 = filePart.left(thumbnailPos);
+            thumbnailBase64 = filePart.mid(thumbnailPos + 11); // 11 是 "[THUMBNAIL]" 的长度
+        } else {
+            fileDataBase64 = filePart;
+        }
 
         // 解码文件数据
         QByteArray fileData = QByteArray::fromBase64(fileDataBase64.toUtf8());
@@ -482,14 +494,24 @@ void ChatWindow::handleFileMessage(const QString &message) {
         QString fileMessage;
         if (isImage) {
             // 对于图片，显示缩略图
-            QString base64Thumbnail = QString::fromLatin1(fileData.toBase64().data());
+            QString thumbnailHtml = "";
+            if (!thumbnailBase64.isEmpty()) {
+                thumbnailHtml = QString("<img src='data:image/jpeg;base64,%1' style='max-width: 100px; max-height: 100px; margin-top: 5px; border-radius: 5px;'/>").arg(thumbnailBase64);
+            } else {
+                // 如果没有缩略图，使用原图数据生成
+                QString base64Thumbnail = QString::fromLatin1(fileData.toBase64().data());
+                thumbnailHtml = QString("<img src='data:image/%1;base64,%2' style='max-width: 100px; max-height: 100px; margin-top: 5px; border-radius: 5px;'/>")
+                               .arg(fileExtension)
+                               .arg(base64Thumbnail);
+            }
+
             fileMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
                                  "%1"
                                  "<div>"
                                  "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
                                  "<span style='color: #4CAF50; font-weight: bold;'>%3:</span></div>"
                                  "<div style='font-size: 14px; margin-top: 2px;'>发送了图片: <strong>%4</strong> (%5 KB)<br>"
-                                 "<img src='data:image/%6;base64,%7' style='max-width: 200px; max-height: 150px; margin-top: 5px; border-radius: 5px;'/><br>"
+                                 "%6<br>"
                                  "<button onclick='saveFile(\"%3\", \"%4\")' style='margin-top: 5px; padding: 3px 8px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;'>保存原图</button></div>"
                                  "</div>"
                                  "</div>")
@@ -498,35 +520,35 @@ void ChatWindow::handleFileMessage(const QString &message) {
                                  .arg(senderUsername)
                                  .arg(fileName)
                                  .arg(fileSize / 1024)
-                                 .arg(fileExtension)
-                                 .arg(base64Thumbnail);
+                                 .arg(thumbnailHtml);
         } else if (isVideo) {
-            // 对于视频，显示封面和播放按钮
+            // 对于视频，显示封面
             fileMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
                                  "%1"
                                  "<div>"
                                  "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
                                  "<span style='color: #4CAF50; font-weight: bold;'>%3:</span></div>"
                                  "<div style='font-size: 14px; margin-top: 2px;'>发送了视频: <strong>%4</strong> (%5 KB)<br>"
-                                 "<div style='width: 200px; height: 150px; background-color: #333; border-radius: 5px; margin-top: 5px; display: flex; align-items: center; justify-content: center; color: white;'>"
-                                 "📹 视频<br><small>%6</small><br>"
-                                 "<button onclick='saveFile(\"%3\", \"%4\")' style='margin-top: 10px; padding: 5px 10px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;'>📥 保存视频</button></div></div>"
+                                 "<div style='width: 100px; height: 100px; background-color: #333; border-radius: 5px; margin-top: 5px; display: flex; align-items: center; justify-content: center; color: white;'>"
+                                 "🎬<br><small>视频</small></div><br>"
+                                 "<button onclick='saveFile(\"%3\", \"%4\")' style='margin-top: 5px; padding: 3px 8px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;'>📥 保存视频</button></div>"
                                  "</div>"
                                  "</div>")
                                  .arg(avatarHtml)
                                  .arg(timestamp)
                                  .arg(senderUsername)
                                  .arg(fileName)
-                                 .arg(fileSize / 1024)
-                                 .arg(fileExtension.toUpper());
+                                 .arg(fileSize / 1024);
         } else {
-            // 对于其他文件，显示保存按钮
+            // 对于其他文件，显示文件夹图标
             fileMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
                                  "%1"
                                  "<div>"
                                  "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
                                  "<span style='color: #4CAF50; font-weight: bold;'>%3:</span></div>"
                                  "<div style='font-size: 14px; margin-top: 2px;'>发送了文件: <strong>%4</strong> (%5 KB)<br>"
+                                 "<div style='width: 100px; height: 100px; background-color: #ddd; border-radius: 5px; margin-top: 5px; display: flex; align-items: center; justify-content: center; color: #666;'>"
+                                 "📁<br><small>文件</small></div><br>"
                                  "<button onclick='saveFile(\"%3\", \"%4\")' style='margin-top: 5px; padding: 3px 8px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;'>💾 保存文件</button></div>"
                                  "</div>"
                                  "</div>")
@@ -777,14 +799,15 @@ void ChatWindow::onSendFile() {
         // 将文件编码为base64
         QByteArray base64Data = fileData.toBase64();
 
-        // 构造文件传输消息（修正格式）
-        QString fileMessage = QString("[%1]: [FILE]%2[FILENAME]%3[FILEEXTENSION]%4[FILETYPE]%5[FILESIZE]%6[FILEDATA]")
+        // 构造文件传输消息
+        QString fileMessage = QString("[%1]: [FILE]%2[FILENAME]%3[FILEEXTENSION]%4[FILETYPE]%5[FILESIZE]%6[FILEDATA]%7[/FILE]")
                              .arg(username)
                              .arg(displayName)
                              .arg(fileExtension)
                              .arg(isImage ? "image" : (isVideo ? "video" : "other"))
                              .arg(fileData.size())
-                             .arg(QString::fromUtf8(base64Data));
+                             .arg(QString::fromUtf8(base64Data))
+                             .arg(isImage ? "[THUMBNAIL]" + generateThumbnail(fileData, isImage) : "");
 
         // 发送文件消息
         networkManager->sendMessageToAllPeers(fileMessage);
@@ -795,25 +818,25 @@ void ChatWindow::onSendFile() {
 }
 
 void ChatWindow::showSentFile(const QString &fileName, const QString &fileExtension, qint64 fileSize, bool isImage, bool isVideo) {
-    QString timestamp = QTime::currentTime().toString("hh:mm");
+     QString timestamp = QTime::currentTime().toString("hh:mm");
     QString fileHtml;
 
     if (isImage) {
-        // 图片文件显示缩略图
+        // 图片文件显示缩略图占位符
         fileHtml = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
                           "<div style='width: 32px; height: 32px; background-color: #2196F3; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: white;'>🖼️</div>"
                           "<div>"
                           "<div><span style='color: #666; font-size: 11px;'>[%1]</span> "
                           "<span style='color: #2196F3; font-weight: bold;'>%2:</span></div>"
                           "<div style='font-size: 14px; margin-top: 2px;'>发送了图片: <strong>%3</strong> (%4 KB)<br>"
-                          "<img src='file://%5' style='max-width: 200px; max-height: 150px; margin-top: 5px; border-radius: 5px;'/></div>"
+                          "<div style='width: 100px; height: 100px; background-color: #eee; border-radius: 5px; margin-top: 5px; display: flex; align-items: center; justify-content: center; color: #999;'>"
+                          "🖼️<br><small>缩略图</small></div></div>"
                           "</div>"
                           "</div>")
                           .arg(timestamp)
                           .arg(username)
                           .arg(fileName)
-                          .arg(fileSize / 1024)
-                          .arg(fileName); // 注意：这里只是演示，实际应用中需要处理本地文件路径
+                          .arg(fileSize / 1024);
     } else if (isVideo) {
         // 视频文件显示封面
         fileHtml = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
@@ -822,8 +845,8 @@ void ChatWindow::showSentFile(const QString &fileName, const QString &fileExtens
                           "<div><span style='color: #666; font-size: 11px;'>[%1]</span> "
                           "<span style='color: #2196F3; font-weight: bold;'>%2:</span></div>"
                           "<div style='font-size: 14px; margin-top: 2px;'>发送了视频: <strong>%3</strong> (%4 KB)<br>"
-                          "<div style='width: 200px; height: 150px; background-color: #333; border-radius: 5px; margin-top: 5px; display: flex; align-items: center; justify-content: center; color: white;'>"
-                          "📹 视频预览<br><small>点击播放</small></div></div>"
+                          "<div style='width: 100px; height: 100px; background-color: #333; border-radius: 5px; margin-top: 5px; display: flex; align-items: center; justify-content: center; color: white;'>"
+                          "🎬<br><small>视频</small></div></div>"
                           "</div>"
                           "</div>")
                           .arg(timestamp)
@@ -831,13 +854,15 @@ void ChatWindow::showSentFile(const QString &fileName, const QString &fileExtens
                           .arg(fileName)
                           .arg(fileSize / 1024);
     } else {
-        // 其他文件显示普通图标
+        // 其他文件显示文件夹图标
         fileHtml = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
                           "<div style='width: 32px; height: 32px; background-color: #2196F3; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: white;'>📁</div>"
                           "<div>"
                           "<div><span style='color: #666; font-size: 11px;'>[%1]</span> "
                           "<span style='color: #2196F3; font-weight: bold;'>%2:</span></div>"
-                          "<div style='font-size: 14px; margin-top: 2px;'>发送了文件: <strong>%3</strong> (%4 KB)</div>"
+                          "<div style='font-size: 14px; margin-top: 2px;'>发送了文件: <strong>%3</strong> (%4 KB)<br>"
+                          "<div style='width: 100px; height: 100px; background-color: #ddd; border-radius: 5px; margin-top: 5px; display: flex; align-items: center; justify-content: center; color: #666;'>"
+                          "📁<br><small>文件</small></div></div>"
                           "</div>"
                           "</div>")
                           .arg(timestamp)
@@ -879,4 +904,28 @@ void ChatWindow::saveReceivedFile(const QString &sender, const QString &filename
         // 从临时存储中移除
         receivedFiles.remove(fileKey);
     }
+}
+
+QString ChatWindow::generateThumbnail(const QByteArray &fileData, bool isImage) {
+    if (!isImage) {
+        return ""; // 非图片文件不生成缩略图
+    }
+
+    QPixmap pixmap;
+    pixmap.loadFromData(fileData);
+
+    if (pixmap.isNull()) {
+        return "";
+    }
+
+    // 生成缩略图
+    QPixmap thumbnail = pixmap.scaled(100, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+    // 转换为base64
+    QByteArray thumbData;
+    QBuffer buffer(&thumbData);
+    buffer.open(QIODevice::WriteOnly);
+    thumbnail.save(&buffer, "JPEG", 80); // 使用JPEG格式压缩
+
+    return QString::fromLatin1(thumbData.toBase64().data());
 }
