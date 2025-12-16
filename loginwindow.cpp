@@ -88,6 +88,7 @@ void LoginWindow::setupUI()
     loginLayout->addWidget(loginButton);
     loginLayout->addWidget(registerSwitchButton, 0, Qt::AlignCenter);
 
+
     // ========== 注册页面 ==========
     registerPage = new QWidget();
     QVBoxLayout *registerLayout = new QVBoxLayout(registerPage);

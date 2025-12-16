@@ -14,7 +14,8 @@ public:
     explicit UDPDiscovery(QObject *parent = nullptr, const QString &localIP = "", const QString &username = "");
 
     signals:
-        void packetReceived(const QString &ip, const QString &username);
+
+    void packetReceived(const QString &ip, const QString &username);
 
 private slots:
     void onReadyRead();

@@ -10,6 +10,7 @@ int main(int argc, char *argv[]) {
     app.setApplicationVersion("1.0.0");
     app.setOrganizationName("ChatSoft");
 
+
     // 创建登录窗口
     LoginWindow loginWindow;
     ChatWindow *chatWindow = nullptr;

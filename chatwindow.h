@@ -19,6 +19,7 @@
 #include <QMap>
 #include "networkmanager.h"
 
+
 QT_BEGIN_NAMESPACE
 namespace Ui { class ChatWindow; }
 QT_END_NAMESPACE

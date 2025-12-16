@@ -71,6 +71,7 @@ void NetworkManager::sendMessageToAllPeers(const QString &message) {
     }
 }
 
+
 void NetworkManager::onUDPPacketReceived(const QString &ip, const QString &username) {
     qDebug() << "UDP发现新节点: IP =" << ip << "用户名 =" << username;
 

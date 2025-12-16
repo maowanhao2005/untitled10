@@ -11,6 +11,7 @@ TCPServer::TCPServer(QObject *parent, int port)
     }
 }
 
+
 void TCPServer::incomingConnection(qintptr socketDescriptor) {
     TCPConnectionHandler *handler = new TCPConnectionHandler(socketDescriptor, this);
     connect(handler, &TCPConnectionHandler::messageReceived, this, &TCPServer::messageReceived);

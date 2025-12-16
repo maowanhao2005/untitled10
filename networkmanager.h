@@ -19,6 +19,7 @@ struct PeerInfo {
 class NetworkManager : public QObject {
     Q_OBJECT
 
+
 public:
     explicit NetworkManager(QObject *parent = nullptr, const QString &username = "");
     void sendMessageToAllPeers(const QString &message);

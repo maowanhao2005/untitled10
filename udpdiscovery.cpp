@@ -42,6 +42,7 @@ void UDPDiscovery::onReadyRead() {
         }
     }
 }
+
 // 广播函数
 void UDPDiscovery::onBroadcastTimeout() {
     QJsonObject obj;
