@@ -35,6 +35,7 @@ private slots:
     void onMessageReceived(const QString &message);
     void onPeerDiscovered(const QString &ip, const QString &username);
     void insertEmoji(const QString &emoji);
+    void onAvatarButtonClicked();
 
 private:
     void setupUI();
@@ -61,6 +62,14 @@ private:
 
     // 常用表情列表
     QStringList commonEmojis;
+
+    QString avatarPath;           // 存储头像路径
+    QPushButton *avatarButton;    // 头像设置按钮
+
+    // 添加新的私有方法
+    void loadUserAvatar();
+    void saveUserAvatar(const QString &avatarPath);
+    QString getAvatarStoragePath();
 };
 
 #endif // CHATWINDOW_H

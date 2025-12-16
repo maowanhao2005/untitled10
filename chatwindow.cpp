@@ -9,6 +9,10 @@
 #include <QAction>
 #include <QWidgetAction>
 #include <QFont>
+#include <QFileDialog>
+#include <QStandardPaths>
+#include <QDir>
+#include <QPixmap>
 
 ChatWindow::ChatWindow(QWidget *parent) : QWidget(parent) {
     // 初始化表情映射
@@ -18,8 +22,12 @@ ChatWindow::ChatWindow(QWidget *parent) : QWidget(parent) {
     setupConnections();
     createEmojiMenu();
 
+    // 加载用户头像
+    loadUserAvatar();
+
     bool ok;
     username = QInputDialog::getText(this, "用户名", "请输入您的用户名:", QLineEdit::Normal, "", &ok);
+
     if (!ok || username.isEmpty()) {
         username = "匿名用户";
     }
@@ -27,6 +35,8 @@ ChatWindow::ChatWindow(QWidget *parent) : QWidget(parent) {
     networkManager = new NetworkManager(this, username);
     connect(networkManager, &NetworkManager::messageReceived, this, &ChatWindow::onMessageReceived);
     connect(networkManager, &NetworkManager::peerDiscovered, this, &ChatWindow::onPeerDiscovered);
+    // 连接头像按钮点击信号
+    connect(avatarButton, &QPushButton::clicked, this, &ChatWindow::onAvatarButtonClicked);
 
     statusLabel->setText(QString("就绪 - 用户名: %1 - 点击😊按钮发送表情").arg(username));
 }
@@ -119,6 +129,21 @@ void ChatWindow::setupUI() {
     QHBoxLayout *inputLayout = new QHBoxLayout();
     inputLayout->setSpacing(5);
 
+    // 头像按钮
+    avatarButton = new QPushButton(this);
+    avatarButton->setFixedSize(40, 40);
+    avatarButton->setStyleSheet("QPushButton { "
+                               "border: 2px solid #ccc; "
+                               "border-radius: 20px; "
+                               "background-color: #f0f0f0; "
+                               "font-size: 18px; "
+                               "}"
+                               "QPushButton:hover { "
+                               "background-color: #e0e0e0; "
+                               "}");
+    avatarButton->setText("👤");
+    avatarButton->setToolTip("设置头像");
+
     // 表情按钮
     emojiButton = new QToolButton(this);
     emojiButton->setText("😊");
@@ -126,7 +151,7 @@ void ChatWindow::setupUI() {
     emojiButton->setFixedSize(40, 40);
     emojiButton->setStyleSheet("QToolButton { font-size: 20px; border: 1px solid #ccc; border-radius: 5px; background-color: #f0f0f0; }"
                                "QToolButton:hover { background-color: #e0e0e0; }");
-    emojiButton->setPopupMode(QToolButton::InstantPopup);
+
 
     // 消息输入框
     messageInput = new QLineEdit(this);
@@ -140,6 +165,7 @@ void ChatWindow::setupUI() {
                              "QPushButton:hover { background-color: #45a049; }"
                              "QPushButton:pressed { background-color: #3d8b40; }");
 
+    inputLayout->addWidget(avatarButton);
     inputLayout->addWidget(emojiButton);
     inputLayout->addWidget(messageInput, 1);
     inputLayout->addWidget(sendButton);
@@ -207,10 +233,11 @@ void ChatWindow::createEmojiMenu() {
                                "QPushButton:hover { background-color: #f0f0f0; border-radius: 3px; }"
                                "QPushButton:pressed { background-color: #e0e0e0; }");
 
+        // ... 按钮样式设置 ...
+
         QString emoji = commonEmojis[i];
         connect(emojiBtn, &QPushButton::clicked, this, [this, emoji]() {
             insertEmoji(emoji);
-            emojiMenu->hide();
         });
 
         gridLayout->addWidget(emojiBtn, i / columns, i % columns);
@@ -259,6 +286,10 @@ void ChatWindow::createEmojiMenu() {
     emojiMenu->addAction(widgetAction);
 
     emojiButton->setMenu(emojiMenu);
+
+    connect(emojiButton, &QToolButton::clicked, this, [this]() {
+       emojiMenu->exec(emojiButton->mapToGlobal(QPoint(0, emojiButton->height())));
+   });
 }
 
 void ChatWindow::setupConnections() {
@@ -377,4 +408,87 @@ void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
 void ChatWindow::insertEmoji(const QString &emoji) {
     messageInput->insert(emoji);
     messageInput->setFocus();
+}
+
+void ChatWindow::onAvatarButtonClicked() {
+    // 如果已经设置了头像，则不允許再次設置
+    if (!avatarPath.isEmpty()) {
+        QMessageBox::information(this, "提示", "您已经设置了头像，无法再次修改！");
+        return;
+    }
+
+    // 打开文件选择对话框
+    QString fileName = QFileDialog::getOpenFileName(this,
+                                                   tr("选择头像"),
+                                                   "",
+                                                   tr("Image Files (*.png *.jpg *.bmp *.jpeg *.gif)"));
+
+    if (!fileName.isEmpty()) {
+        // 保存头像
+        saveUserAvatar(fileName);
+
+        // 显示头像
+        QPixmap pixmap(fileName);
+        if (!pixmap.isNull()) {
+            pixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            avatarButton->setIcon(QIcon(pixmap));
+            avatarButton->setIconSize(QSize(40, 40));
+            avatarButton->setText(""); // 清除文字
+        }
+    }
+}
+
+void ChatWindow::loadUserAvatar() {
+    QString avatarStoragePath = getAvatarStoragePath();
+
+    // 检查头像文件是否存在
+    if (QFile::exists(avatarStoragePath)) {
+        QFile file(avatarStoragePath);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&file);
+            QString savedAvatarPath = in.readLine();
+
+            // 检查保存的头像文件是否存在
+            if (QFile::exists(savedAvatarPath)) {
+                avatarPath = savedAvatarPath;
+
+                // 显示头像
+                QPixmap pixmap(avatarPath);
+                if (!pixmap.isNull()) {
+                    pixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    avatarButton->setIcon(QIcon(pixmap));
+                    avatarButton->setIconSize(QSize(40, 40));
+                    avatarButton->setText(""); // 清除文字
+                }
+            }
+            file.close();
+        }
+    }
+}
+
+void ChatWindow::saveUserAvatar(const QString &avatarPath) {
+    this->avatarPath = avatarPath;
+
+    // 保存头像路径到配置文件
+    QString avatarStoragePath = getAvatarStoragePath();
+    QFile file(avatarStoragePath);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&file);
+        out << avatarPath;
+        file.close();
+    }
+}
+
+QString ChatWindow::getAvatarStoragePath() {
+    // 获取应用程序配置目录
+    QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir dir(configPath);
+
+    // 创建目录（如果不存在）
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+
+    // 返回头像配置文件路径
+    return dir.filePath("avatar_config.txt");
 }
