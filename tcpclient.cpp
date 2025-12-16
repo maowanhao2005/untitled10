@@ -8,6 +8,7 @@ TCPClient::TCPClient(QObject *parent) : QObject(parent) {
     connect(socket, &QTcpSocket::errorOccurred, this, &TCPClient::onError);
 }
 
+
 void TCPClient::sendMessage(const QString &ip, int port, const QString &message) {
     targetIP = ip;
     targetPort = port;

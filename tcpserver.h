@@ -9,6 +9,7 @@
 class TCPServer : public QTcpServer {
     Q_OBJECT
 
+
 public:
     explicit TCPServer(QObject *parent = nullptr, int port = 0);
 

@@ -45,6 +45,7 @@ ChatWindow::ChatWindow(const QString &username, const QString &avatarPath, QWidg
     statusLabel->setText(QString("就绪 - 用户名: %1 - 点击😊按钮发送表情").arg(this->username));
 }
 
+
 ChatWindow::~ChatWindow() {
     delete networkManager;
 }

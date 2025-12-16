@@ -17,6 +17,7 @@ find_package(Qt6 COMPONENTS
         REQUIRED)
 qt_standard_project_setup()
 
+
 add_executable(untitled10 main.cpp
         chatwindow.cpp
         chatwindow.h

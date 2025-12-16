@@ -11,6 +11,7 @@ public:
     explicit TCPClient(QObject *parent = nullptr);
     void sendMessage(const QString &ip, int port, const QString &message);
 
+
 private slots:
     void onConnected();
     void onError();
