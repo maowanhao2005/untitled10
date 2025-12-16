@@ -21,9 +21,13 @@
 ChatWindow::ChatWindow(const QString &username, const QString &avatarPath, QWidget *parent)
     : QWidget(parent), username(username), avatarPath(avatarPath)
 {
-    // 如果传入了空用户名，使用默认用户名
+    // 如果传入了空用户名，使用匿名
     if (this->username.isEmpty()) {
-        this->username = "匿名用户";
+        bool ok;
+        this->username = QInputDialog::getText(this, "用户名", "请输入您的用户名:", QLineEdit::Normal, "", &ok);
+        if (!ok || this->username.isEmpty()) {
+            this->username = "匿名用户";
+        }
     }
 
     // 初始化表情映射
@@ -44,7 +48,6 @@ ChatWindow::ChatWindow(const QString &username, const QString &avatarPath, QWidg
 
     statusLabel->setText(QString("就绪 - 用户名: %1 - 点击😊按钮发送表情").arg(this->username));
 }
-
 
 ChatWindow::~ChatWindow() {
     delete networkManager;
@@ -393,7 +396,6 @@ QString ChatWindow::processMessageWithEmojis(const QString &message) {
 
     return result;
 }
-
 void ChatWindow::onSendMessage() {
     QString message = messageInput->text().trimmed();
     if (message.isEmpty()) return;
@@ -839,10 +841,10 @@ void ChatWindow::insertEmoji(const QString &emoji) {
 
 void ChatWindow::onAvatarButtonClicked() {
     // 如果已经设置了头像，则不允許再次設置
-     // if (!avatarPath.isEmpty()) {
-     //     QMessageBox::information(this, "提示", "您已经设置了头像，无法再次修改！");
-     //     return;
-    // }
+    if (!avatarPath.isEmpty()) {
+        QMessageBox::information(this, "提示", "您已经设置了头像，无法再次修改！");
+        return;
+    }
 
     // 打开文件选择对话框
     QString fileName = QFileDialog::getOpenFileName(this,

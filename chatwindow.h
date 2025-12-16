@@ -18,7 +18,7 @@
 #include <QFont>
 #include <QMap>
 #include "networkmanager.h"
-
+#include <QRegularExpression>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class ChatWindow; }
