@@ -41,6 +41,10 @@ private slots:
     void insertEmoji(const QString &emoji);
     void onAvatarButtonClicked();
     void onSendFile();
+
+    void showSentFile(const QString &fileName, const QString &fileExtension, qint64 fileSize, bool isImage,
+                      bool isVideo);
+
     void onSaveFile();
 
     void saveReceivedFile(const QString &sender, const QString &filename);
