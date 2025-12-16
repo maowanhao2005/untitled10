@@ -419,10 +419,10 @@ void ChatWindow::insertEmoji(const QString &emoji) {
 
 void ChatWindow::onAvatarButtonClicked() {
     // 如果已经设置了头像，则不允許再次設置
-    if (!avatarPath.isEmpty()) {
-        QMessageBox::information(this, "提示", "您已经设置了头像，无法再次修改！");
-        return;
-    }
+     // if (!avatarPath.isEmpty()) {
+     //     QMessageBox::information(this, "提示", "您已经设置了头像，无法再次修改！");
+     //     return;
+    // }
 
     // 打开文件选择对话框
     QString fileName = QFileDialog::getOpenFileName(this,
