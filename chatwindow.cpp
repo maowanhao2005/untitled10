@@ -283,15 +283,8 @@ void ChatWindow::onSendMessage() {
     // 处理表情代码
     QString processedMessage = processMessageWithEmojis(message);
 
-    // 显示在聊天历史中（带头像）
-    QTextCursor cursor = chatHistory->textCursor();
-    cursor.movePosition(QTextCursor::End);
-
-    // 添加时间戳
-    QString timestamp = QTime::currentTime().toString("hh:mm");
-
-    // 获取当前用户头像
-    QString avatarHtml = "";
+    // 将头像信息编码到消息中
+    QString avatarData = "";
     if (!avatarPath.isEmpty()) {
         QPixmap avatarPixmap(avatarPath);
         if (!avatarPixmap.isNull()) {
@@ -301,15 +294,33 @@ void ChatWindow::onSendMessage() {
             QBuffer buffer(&byteArray);
             buffer.open(QIODevice::WriteOnly);
             avatarPixmap.save(&buffer, "PNG");
-            QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
-            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
+            avatarData = QString::fromLatin1(byteArray.toBase64().data());
         }
+    }
+
+    // 构造带头像信息的消息
+    QString fullMessage = QString("[%1]: %2").arg(username).arg(message);
+    if (!avatarData.isEmpty()) {
+        fullMessage += QString("|AVATAR:%1").arg(avatarData);
+    }
+
+    // 显示在聊天历史中（带头像）
+    QTextCursor cursor = chatHistory->textCursor();
+    cursor.movePosition(QTextCursor::End);
+
+    // 添加时间戳
+    QString timestamp = QTime::currentTime().toString("hh:mm");
+
+    // 获取当前用户头像
+    QString avatarHtml = "";
+    if (!avatarData.isEmpty()) {
+        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(avatarData);
     } else {
         // 默认头像
         avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
     }
 
-    QString fullMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+    QString displayMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
                                  "%1"
                                  "<div>"
                                  "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
@@ -322,33 +333,55 @@ void ChatWindow::onSendMessage() {
                                  .arg(username)
                                  .arg(processedMessage.toHtmlEscaped().replace("\n", "<br>"));
 
-    chatHistory->append(fullMessage);
+    chatHistory->append(displayMessage);
     chatHistory->moveCursor(QTextCursor::End);
 
     messageInput->clear();
 
-    // 发送原始消息（包含表情代码），让接收方也进行转换
-    networkManager->sendMessageToAllPeers(message);
+    // 发送带头像信息的消息
+    networkManager->sendMessageToAllPeers(fullMessage);
+
 }
 
 void ChatWindow::onMessageReceived(const QString &message) {
-    // 收到的消息可能包含表情代码，需要转换
-    QString processedMessage = processMessageWithEmojis(message);
-
-    // 提取用户名和消息内容
+     // 提取用户名和消息内容
     QString displayMessage;
     QString senderUsername = "未知用户";
+    QString avatarData = "";
 
-    if (message.startsWith("[") && message.contains("]: ")) {
-        int bracketEnd = message.indexOf("]: ");
-        QString usernamePart = message.mid(1, bracketEnd - 1);  // 提取用户名
+    QString actualMessage = message;
+
+    // 检查是否有头像数据
+    if (message.contains("|AVATAR:")) {
+        int avatarPos = message.lastIndexOf("|AVATAR:");
+        actualMessage = message.left(avatarPos);
+        avatarData = message.mid(avatarPos + 8); // 跳过 "|AVATAR:" 前缀
+    }
+
+    if (actualMessage.startsWith("[") && actualMessage.contains("]: ")) {
+        int bracketEnd = actualMessage.indexOf("]: ");
+        QString usernamePart = actualMessage.mid(1, bracketEnd - 1);  // 提取用户名
         senderUsername = usernamePart;
-        QString messagePart = message.mid(bracketEnd + 3);
+        QString messagePart = actualMessage.mid(bracketEnd + 3);
 
+        // 处理表情代码
         QString processedContent = processMessageWithEmojis(messagePart);
         displayMessage = processedContent;
     } else {
-        displayMessage = processedMessage;
+        displayMessage = processMessageWithEmojis(actualMessage);
+    }
+
+    // 如果有头像数据，存储到用户头像缓存中
+    if (!avatarData.isEmpty() && !senderUsername.isEmpty()) {
+        QPixmap avatarPixmap;
+        QByteArray avatarBytes = QByteArray::fromBase64(avatarData.toLatin1());
+        avatarPixmap.loadFromData(avatarBytes);
+        if (!avatarPixmap.isNull()) {
+            userAvatars[senderUsername] = avatarPixmap;
+
+            // 更新在线用户列表中的头像
+            updateOnlineUserAvatar(senderUsername, avatarPixmap);
+        }
     }
 
     // 添加时间戳
@@ -356,19 +389,24 @@ void ChatWindow::onMessageReceived(const QString &message) {
 
     // 获取发送者头像
     QString avatarHtml = "";
-    QPixmap senderAvatar = getUserAvatar(senderUsername);
-    if (!senderAvatar.isNull()) {
-        senderAvatar = cropToSquare(senderAvatar);
-        senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        QByteArray byteArray;
-        QBuffer buffer(&byteArray);
-        buffer.open(QIODevice::WriteOnly);
-        senderAvatar.save(&buffer, "PNG");
-        QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
-        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
+    if (!avatarData.isEmpty()) {
+        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(avatarData);
     } else {
-        // 默认头像
-        avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
+        // 尝试从缓存获取头像
+        QPixmap senderAvatar = getUserAvatar(senderUsername);
+        if (!senderAvatar.isNull()) {
+            senderAvatar = cropToSquare(senderAvatar);
+            senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QByteArray byteArray;
+            QBuffer buffer(&byteArray);
+            buffer.open(QIODevice::WriteOnly);
+            senderAvatar.save(&buffer, "PNG");
+            QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
+            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
+        } else {
+            // 默认头像
+            avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
+        }
     }
 
     QString fullMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
@@ -409,6 +447,14 @@ void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
         // 更新现有用户
         existingItem->setText(itemText);
         existingItem->setForeground(QColor("#2e7d32")); // 绿色表示在线
+
+        // 检查是否有缓存的头像
+        if (userAvatars.contains(username)) {
+            QPixmap userAvatar = userAvatars[username];
+            userAvatar = cropToSquare(userAvatar);
+            userAvatar = userAvatar.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            existingItem->setIcon(QIcon(userAvatar));
+        }
         return;
     }
 
@@ -424,16 +470,18 @@ void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
         userAvatar = userAvatar.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         item->setIcon(QIcon(userAvatar));
     } else {
-        // 默认头像
+        // 创建默认头像
         QPixmap defaultAvatar(24, 24);
         defaultAvatar.fill(Qt::transparent);
         QPainter painter(&defaultAvatar);
+        painter.setRenderHint(QPainter::Antialiasing);
         painter.setBrush(QColor("#ddd"));
         painter.setPen(Qt::NoPen);
         painter.drawEllipse(0, 0, 24, 24);
         painter.setPen(QColor("#666"));
         painter.setFont(QFont("Segoe UI", 12));
         painter.drawText(defaultAvatar.rect(), Qt::AlignCenter, "👤");
+        painter.end();
         item->setIcon(QIcon(defaultAvatar));
     }
 
@@ -565,4 +613,19 @@ QPixmap ChatWindow::cropToSquare(const QPixmap &pixmap) {
     int y = (pixmap.height() - size) / 2;
 
     return pixmap.copy(x, y, size, size);
+}
+
+void ChatWindow::updateOnlineUserAvatar(const QString &username, const QPixmap &avatar) {
+    for (int i = 0; i < onlineUsersList->count(); ++i) {
+        QListWidgetItem *item = onlineUsersList->item(i);
+        QString itemText = item->text();
+
+        // 检查用户名是否匹配
+        if (itemText.startsWith(username + "\n")) {
+            QPixmap scaledAvatar = cropToSquare(avatar);
+            scaledAvatar = scaledAvatar.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            item->setIcon(QIcon(scaledAvatar));
+            break;
+        }
+    }
 }

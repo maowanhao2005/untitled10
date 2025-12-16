@@ -78,6 +78,7 @@ private:
     QPixmap getUserAvatar(const QString &username);
 
     QPixmap cropToSquare(const QPixmap &pixmap);
+    void updateOnlineUserAvatar(const QString &username, const QPixmap &avatar);
 };
 
 #endif // CHATWINDOW_H
