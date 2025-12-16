@@ -14,6 +14,7 @@
 #include <QDir>
 #include <QPixmap>
 #include <QBuffer>
+#include <QPainter>
 
 ChatWindow::ChatWindow(QWidget *parent) : QWidget(parent) {
     // 初始化表情映射
@@ -294,14 +295,18 @@ void ChatWindow::onSendMessage() {
     if (!avatarPath.isEmpty()) {
         QPixmap avatarPixmap(avatarPath);
         if (!avatarPixmap.isNull()) {
+            avatarPixmap = cropToSquare(avatarPixmap);
             avatarPixmap = avatarPixmap.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             QByteArray byteArray;
             QBuffer buffer(&byteArray);
             buffer.open(QIODevice::WriteOnly);
             avatarPixmap.save(&buffer, "PNG");
             QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
-            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px;' />").arg(base64Image);
+            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
         }
+    } else {
+        // 默认头像
+        avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
     }
 
     QString fullMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
@@ -353,13 +358,14 @@ void ChatWindow::onMessageReceived(const QString &message) {
     QString avatarHtml = "";
     QPixmap senderAvatar = getUserAvatar(senderUsername);
     if (!senderAvatar.isNull()) {
+        senderAvatar = cropToSquare(senderAvatar);
         senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         QByteArray byteArray;
         QBuffer buffer(&byteArray);
         buffer.open(QIODevice::WriteOnly);
         senderAvatar.save(&buffer, "PNG");
         QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
-        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px;' />").arg(base64Image);
+        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
     } else {
         // 默认头像
         avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
@@ -383,8 +389,6 @@ void ChatWindow::onMessageReceived(const QString &message) {
 }
 
 void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
-    QString itemText = QString("%1\n   📡 %2").arg(username).arg(ip);
-
     // 创建自定义的列表项widget
     QListWidgetItem *existingItem = nullptr;
     int existingRow = -1;
@@ -398,6 +402,9 @@ void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
         }
     }
 
+    QString itemText = QString("%1\n   📡 %2").arg(username).arg(ip);
+
+    // 创建带头像的列表项
     if (existingItem) {
         // 更新现有用户
         existingItem->setText(itemText);
@@ -409,6 +416,27 @@ void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
     QListWidgetItem *item = new QListWidgetItem(itemText, onlineUsersList);
     item->setForeground(QColor("#2e7d32")); // 绿色
     item->setFont(QFont("Microsoft YaHei", 10));
+
+    // 设置用户头像（如果有）
+    QPixmap userAvatar = getUserAvatar(username);
+    if (!userAvatar.isNull()) {
+        userAvatar = cropToSquare(userAvatar);
+        userAvatar = userAvatar.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        item->setIcon(QIcon(userAvatar));
+    } else {
+        // 默认头像
+        QPixmap defaultAvatar(24, 24);
+        defaultAvatar.fill(Qt::transparent);
+        QPainter painter(&defaultAvatar);
+        painter.setBrush(QColor("#ddd"));
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(0, 0, 24, 24);
+        painter.setPen(QColor("#666"));
+        painter.setFont(QFont("Segoe UI", 12));
+        painter.drawText(defaultAvatar.rect(), Qt::AlignCenter, "👤");
+        item->setIcon(QIcon(defaultAvatar));
+    }
+
     onlineUsersList->addItem(item);
 }
 
@@ -418,10 +446,10 @@ void ChatWindow::insertEmoji(const QString &emoji) {
 }
 
 void ChatWindow::onAvatarButtonClicked() {
-    // 如果已经设置了头像，则不允許再次設置
-     // if (!avatarPath.isEmpty()) {
-     //     QMessageBox::information(this, "提示", "您已经设置了头像，无法再次修改！");
-     //     return;
+    // // 如果已经设置了头像，则不允許再次設置
+    // if (!avatarPath.isEmpty()) {
+    //     QMessageBox::information(this, "提示", "您已经设置了头像，无法再次修改！");
+    //     return;
     // }
 
     // 打开文件选择对话框
@@ -431,14 +459,16 @@ void ChatWindow::onAvatarButtonClicked() {
                                                    tr("Image Files (*.png *.jpg *.bmp *.jpeg *.gif)"));
 
     if (!fileName.isEmpty()) {
-        // 保存头像
-        saveUserAvatar(fileName);
-
-        // 显示头像
+        // 加载并裁剪头像
         QPixmap pixmap(fileName);
         if (!pixmap.isNull()) {
-            pixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            avatarButton->setIcon(QIcon(pixmap));
+            pixmap = cropToSquare(pixmap);
+            // 保存头像
+            saveUserAvatar(fileName);
+
+            // 显示头像
+            QPixmap scaledPixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            avatarButton->setIcon(QIcon(scaledPixmap));
             avatarButton->setIconSize(QSize(40, 40));
             avatarButton->setText(""); // 清除文字
         }
@@ -462,8 +492,9 @@ void ChatWindow::loadUserAvatar() {
                 // 显示头像
                 QPixmap pixmap(avatarPath);
                 if (!pixmap.isNull()) {
-                    pixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                    avatarButton->setIcon(QIcon(pixmap));
+                    pixmap = cropToSquare(pixmap);
+                    QPixmap scaledPixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    avatarButton->setIcon(QIcon(scaledPixmap));
                     avatarButton->setIconSize(QSize(40, 40));
                     avatarButton->setText(""); // 清除文字
                 }
@@ -513,15 +544,25 @@ QPixmap ChatWindow::getUserAvatar(const QString &username) {
     if (username == this->username && !avatarPath.isEmpty()) {
         QPixmap pixmap(avatarPath);
         if (!pixmap.isNull()) {
-            return pixmap;
+            return cropToSquare(pixmap);
         }
     }
 
     // 对于其他用户，返回默认头像或缓存的头像
     if (userAvatars.contains(username)) {
-        return userAvatars[username];
+        return cropToSquare(userAvatars[username]);
     }
 
     // 返回空的pixmap表示没有特定头像
     return QPixmap();
+}
+
+QPixmap ChatWindow::cropToSquare(const QPixmap &pixmap) {
+    if (pixmap.isNull()) return pixmap;
+
+    int size = qMin(pixmap.width(), pixmap.height());
+    int x = (pixmap.width() - size) / 2;
+    int y = (pixmap.height() - size) / 2;
+
+    return pixmap.copy(x, y, size, size);
 }
