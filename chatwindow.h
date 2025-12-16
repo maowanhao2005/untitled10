@@ -76,6 +76,8 @@ private:
     // 添加新的方法
     QString extractUsernameFromMessage(const QString &message);
     QPixmap getUserAvatar(const QString &username);
+
+    QPixmap cropToSquare(const QPixmap &pixmap);
 };
 
 #endif // CHATWINDOW_H
