@@ -24,8 +24,8 @@ public:
     explicit NetworkManager(QObject *parent = nullptr, const QString &username = "");
     void sendMessageToAllPeers(const QString &message);
 
-signals:
-    void messageReceived(const QString &message);
+    signals:
+        void messageReceived(const QString &message);
     void peerDiscovered(const QString &ip, const QString &username);
 
 private slots:
