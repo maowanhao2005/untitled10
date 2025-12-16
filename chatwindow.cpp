@@ -98,6 +98,14 @@ void ChatWindow::setupUI() {
     avatarButton->setText("👤");
     avatarButton->setToolTip("设置头像");
 
+    // 文件发送按钮
+    fileButton = new QPushButton("📁", this);
+    fileButton->setFixedSize(40, 40);
+    fileButton->setStyleSheet("QPushButton { font-size: 20px; border: 1px solid #ccc; border-radius: 5px; background-color: #f0f0f0; }"
+                             "QPushButton:hover { background-color: #e0e0e0; }");
+    fileButton->setToolTip("发送文件");
+
+
     // 表情按钮
     emojiButton = new QToolButton(this);
     emojiButton->setText("😊");
@@ -120,6 +128,7 @@ void ChatWindow::setupUI() {
                              "QPushButton:pressed { background-color: #3d8b40; }");
 
     inputLayout->addWidget(avatarButton);
+    inputLayout->addWidget(fileButton);  // 添加文件按钮
     inputLayout->addWidget(emojiButton);
     inputLayout->addWidget(messageInput, 1);
     inputLayout->addWidget(sendButton);
@@ -158,7 +167,7 @@ void ChatWindow::setupUI() {
     // 绑定回车键发送
     connect(messageInput, &QLineEdit::returnPressed, this, &ChatWindow::onSendMessage);
     connect(sendButton, &QPushButton::clicked, this, &ChatWindow::onSendMessage);
-
+    connect(fileButton, &QPushButton::clicked, this, &ChatWindow::onSendFile);
     // 欢迎消息
 
 }
@@ -201,21 +210,6 @@ void ChatWindow::createEmojiMenu() {
     QWidget *emojiCodeWidget = new QWidget(this);
     QVBoxLayout *codeLayout = new QVBoxLayout(emojiCodeWidget);
     codeLayout->setContentsMargins(10, 10, 10, 10);
-
-    QLabel *codeTitle = new QLabel("📝 表情代码表：", this);
-    codeTitle->setStyleSheet("font-weight: bold; font-size: 12px;");
-    codeLayout->addWidget(codeTitle);
-
-    // 显示部分常用表情代码
-    QStringList commonCodes = {":) → 😊", ":D → 😄", ":P → 😛", ";-) → 😉",
-                              "<3 → ❤️", ":/ → 😕", "B) → 😎", "XD → 😆",
-                              "T_T → 😭", ":* → 😘", "o.O → 😳", ":| → 😐"};
-
-    for (const QString &code : commonCodes) {
-        QLabel *codeLabel = new QLabel(code, this);
-        codeLabel->setStyleSheet("font-size: 11px; padding: 2px;");
-        codeLayout->addWidget(codeLabel);
-    }
 
     // 创建滚动区域
     QScrollArea *scrollArea = new QScrollArea(this);
@@ -344,7 +338,97 @@ void ChatWindow::onSendMessage() {
 }
 
 void ChatWindow::onMessageReceived(const QString &message) {
-     // 提取用户名和消息内容
+    // 检查是否是文件消息
+    if (message.contains("[FILE]") && message.contains("[/FILE]")) {
+        // 解析文件消息
+        // 格式: [用户名]: [FILE]文件名[FILENAME]文件数据[/FILE]
+
+
+        int startBracket = message.indexOf('[');
+        int endBracket = message.indexOf(']');
+        QString senderUsername = message.mid(startBracket + 1, endBracket - startBracket - 1);
+
+        int fileStart = message.indexOf("[FILE]") + 6;  // 6 是 "[FILE]" 的长度
+        int filenameStart = message.indexOf("[FILENAME]");
+        int fileEnd = message.indexOf("[/FILE]");
+
+        if (fileStart >= 6 && filenameStart > fileStart && fileEnd > filenameStart) {
+            QString fileName = message.mid(fileStart, filenameStart - fileStart);
+            QString fileDataBase64 = message.mid(filenameStart + 10, fileEnd - filenameStart - 10);  // 10 是 "[FILENAME]" 的长度
+
+            // 解码文件数据
+            QByteArray fileData = QByteArray::fromBase64(fileDataBase64.toUtf8());
+
+            // 添加时间戳
+            QString timestamp = QTime::currentTime().toString("hh:mm");
+
+            // 获取发送者头像
+            QString avatarHtml = "";
+            QPixmap senderAvatar = getUserAvatar(senderUsername);
+            if (!senderAvatar.isNull()) {
+                senderAvatar = cropToSquare(senderAvatar);
+                senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                QByteArray byteArray;
+                QBuffer buffer(&byteArray);
+                buffer.open(QIODevice::WriteOnly);
+                senderAvatar.save(&buffer, "PNG");
+                QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
+                avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
+            } else {
+                // 默认头像
+                avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
+            }
+
+            // 直接询问用户是否保存文件
+            QMessageBox msgBox;
+            msgBox.setWindowTitle("收到文件");
+            msgBox.setText(QString("%1 向您发送了一个文件:\n%2 (%3 字节)")
+                          .arg(senderUsername)
+                          .arg(fileName)
+                          .arg(fileData.size()));
+            msgBox.setInformativeText("是否保存该文件?");
+            msgBox.setStandardButtons(QMessageBox::Save | QMessageBox::Discard);
+            msgBox.setDefaultButton(QMessageBox::Save);
+
+            if (msgBox.exec() == QMessageBox::Save) {
+                // 打开保存文件对话框
+                QString saveFileName = QFileDialog::getSaveFileName(this, tr("保存文件"), fileName, tr("所有文件 (*)"));
+
+                if (!saveFileName.isEmpty()) {
+                    QFile saveFile(saveFileName);
+                    if (saveFile.open(QIODevice::WriteOnly)) {
+                        saveFile.write(fileData);
+                        saveFile.close();
+                        QMessageBox::information(this, "成功", "文件已保存到：" + saveFileName);
+                    } else {
+                        QMessageBox::warning(this, "错误", "无法保存文件：" + saveFileName);
+                    }
+                }
+            }
+
+            // 显示文件接收消息
+            QString fileMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+                                         "%1"
+                                         "<div>"
+                                         "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
+                                         "<span style='color: #4CAF50; font-weight: bold;'>%3:</span></div>"
+                                         "<div style='font-size: 14px; margin-top: 2px;'>发送了文件: <strong>%4</strong> (%5 bytes) [<span style='color: #2196F3;'>文件传输已完成</span>]</div>"
+                                         "</div>"
+                                         "</div>")
+                                         .arg(avatarHtml)
+                                         .arg(timestamp)
+                                         .arg(senderUsername)
+                                         .arg(fileName)
+                                         .arg(fileData.size());
+
+            chatHistory->append(fileMessage);
+            chatHistory->moveCursor(QTextCursor::End);
+        }
+        return;
+    }
+
+    // 处理普通文本消息（原有代码）
+    // 提取用户名和消息内容
     QString displayMessage;
     QString senderUsername = "未知用户";
     QString avatarData = "";
@@ -426,6 +510,78 @@ void ChatWindow::onMessageReceived(const QString &message) {
     chatHistory->moveCursor(QTextCursor::End);
 }
 
+void ChatWindow::handleFileMessage(const QString &message) {
+    // 解析文件消息
+    // 格式: [用户名]: [FILE]文件名[FILENAME]文件数据[/FILE]
+
+    int startBracket = message.indexOf('[');
+    int endBracket = message.indexOf(']');
+    QString senderUsername = message.mid(startBracket + 1, endBracket - startBracket - 1);
+
+    int fileStart = message.indexOf("[FILE]") + 6;  // 6 是 "[FILE]" 的长度
+    int filenameStart = message.indexOf("[FILENAME]");
+    int fileEnd = message.indexOf("[/FILE]");
+
+    if (fileStart >= 6 && filenameStart > fileStart && fileEnd > filenameStart) {
+        QString fileName = message.mid(fileStart, filenameStart - fileStart);
+        QString fileDataBase64 = message.mid(filenameStart + 10, fileEnd - filenameStart - 10);  // 10 是 "[FILENAME]" 的长度
+
+        // 解码文件数据
+        QByteArray fileData = QByteArray::fromBase64(fileDataBase64.toUtf8());
+
+        // 添加时间戳
+        QString timestamp = QTime::currentTime().toString("hh:mm");
+
+        // 获取发送者头像
+        QString avatarHtml = "";
+        QPixmap senderAvatar = getUserAvatar(senderUsername);
+        if (!senderAvatar.isNull()) {
+            senderAvatar = cropToSquare(senderAvatar);
+            senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QByteArray byteArray;
+            QBuffer buffer(&byteArray);
+            buffer.open(QIODevice::WriteOnly);
+            senderAvatar.save(&buffer, "PNG");
+            QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
+            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
+        } else {
+            // 默认头像
+            avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
+        }
+
+        // 创建保存文件的链接
+        QString saveLink = QString("<a href='#' id='save_%1_%2' style='color: #2196F3; text-decoration: underline;'>保存文件</a>")
+                          .arg(senderUsername)
+                          .arg(fileName);
+
+        // 显示文件接收消息
+        QString fileMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+                                     "%1"
+                                     "<div>"
+                                     "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
+                                     "<span style='color: #4CAF50; font-weight: bold;'>%3:</span></div>"
+                                     "<div style='font-size: 14px; margin-top: 2px;'>发送了文件: <strong>%4</strong> (%5 bytes) %6</div>"
+                                     "</div>"
+                                     "</div>")
+                                     .arg(avatarHtml)
+                                     .arg(timestamp)
+                                     .arg(senderUsername)
+                                     .arg(fileName)
+                                     .arg(fileData.size())
+                                     .arg(saveLink);
+
+        chatHistory->append(fileMessage);
+        chatHistory->moveCursor(QTextCursor::End);
+
+        // 临时存储文件数据，等待用户保存
+        QString fileKey = QString("%1_%2").arg(senderUsername).arg(fileName);
+        receivedFiles[fileKey] = QString::fromLatin1(fileData.toBase64().data());
+
+        // 连接保存链接的点击事件（简化处理，实际项目中可能需要更复杂的处理）
+        // 这里我们通过一个特殊的消息来触发保存
+    }
+}
+
 void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
     // 创建自定义的列表项widget
     QListWidgetItem *existingItem = nullptr;
@@ -494,11 +650,11 @@ void ChatWindow::insertEmoji(const QString &emoji) {
 }
 
 void ChatWindow::onAvatarButtonClicked() {
-    // // 如果已经设置了头像，则不允許再次設置
-    // if (!avatarPath.isEmpty()) {
-    //     QMessageBox::information(this, "提示", "您已经设置了头像，无法再次修改！");
-    //     return;
-    // }
+    // 如果已经设置了头像，则不允許再次設置
+    if (!avatarPath.isEmpty()) {
+        QMessageBox::information(this, "提示", "您已经设置了头像，无法再次修改！");
+        return;
+    }
 
     // 打开文件选择对话框
     QString fileName = QFileDialog::getOpenFileName(this,
@@ -627,5 +783,87 @@ void ChatWindow::updateOnlineUserAvatar(const QString &username, const QPixmap &
             item->setIcon(QIcon(scaledAvatar));
             break;
         }
+    }
+}
+
+void ChatWindow::onSendFile() {
+    // 打开文件选择对话框
+    QString fileName = QFileDialog::getOpenFileName(this, tr("选择要发送的文件"), "", tr("所有文件 (*)"));
+
+    if (!fileName.isEmpty()) {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            QMessageBox::warning(this, "错误", "无法打开文件：" + fileName);
+            return;
+        }
+
+        // 读取文件内容
+        QByteArray fileData = file.readAll();
+        file.close();
+
+        // 获取文件名
+        QFileInfo fileInfo(fileName);
+        QString displayName = fileInfo.fileName();
+
+        // 将文件编码为base64
+        QByteArray base64Data = fileData.toBase64();
+
+        // 构造文件传输消息
+        QString fileMessage = QString("[%1]: [FILE]%2[FILENAME]%3[FILEDATA]%4[/FILE]")
+                             .arg(username)
+                             .arg(displayName)
+                             .arg(QString::fromUtf8(base64Data));
+
+        // 发送文件消息
+        networkManager->sendMessageToAllPeers(fileMessage);
+
+        // 在聊天历史中显示发送的文件
+        QString timestamp = QTime::currentTime().toString("hh:mm");
+        QString fileHtml = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+                                  "<div style='width: 32px; height: 32px; background-color: #2196F3; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: white;'>📁</div>"
+                                  "<div>"
+                                  "<div><span style='color: #666; font-size: 11px;'>[%1]</span> "
+                                  "<span style='color: #2196F3; font-weight: bold;'>%2:</span></div>"
+                                  "<div style='font-size: 14px; margin-top: 2px;'>发送了文件: <strong>%3</strong> (%4 bytes)</div>"
+                                  "</div>"
+                                  "</div>")
+                                  .arg(timestamp)
+                                  .arg(username)
+                                  .arg(displayName)
+                                  .arg(fileData.size());
+
+        chatHistory->append(fileHtml);
+        chatHistory->moveCursor(QTextCursor::End);
+    }
+}
+
+void ChatWindow::onSaveFile() {
+    // 这个方法将在用户点击保存文件链接时调用
+    // 实际实现会在 onMessageReceived 中处理
+}
+
+void ChatWindow::saveReceivedFile(const QString &sender, const QString &filename) {
+    QString fileKey = QString("%1_%2").arg(sender).arg(filename);
+
+    if (receivedFiles.contains(fileKey)) {
+        // 解码文件数据
+        QByteArray fileData = QByteArray::fromBase64(receivedFiles[fileKey].toLatin1());
+
+        // 打开保存文件对话框
+        QString saveFileName = QFileDialog::getSaveFileName(this, tr("保存文件"), filename, tr("所有文件 (*)"));
+
+        if (!saveFileName.isEmpty()) {
+            QFile saveFile(saveFileName);
+            if (saveFile.open(QIODevice::WriteOnly)) {
+                saveFile.write(fileData);
+                saveFile.close();
+                QMessageBox::information(this, "成功", "文件已保存到：" + saveFileName);
+            } else {
+                QMessageBox::warning(this, "错误", "无法保存文件：" + saveFileName);
+            }
+        }
+
+        // 从临时存储中移除
+        receivedFiles.remove(fileKey);
     }
 }
