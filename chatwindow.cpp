@@ -13,6 +13,7 @@
 #include <QStandardPaths>
 #include <QDir>
 #include <QPixmap>
+#include <QBuffer>
 
 ChatWindow::ChatWindow(QWidget *parent) : QWidget(parent) {
     // 初始化表情映射
@@ -46,54 +47,6 @@ ChatWindow::~ChatWindow() {
 }
 
 void ChatWindow::initEmojiMap() {
-    // 初始化表情映射表
-    emojiMap = {
-        // 笑脸和情感
-        {":)", "😊"},
-        {":D", "😄"},
-        {":(", "😞"},
-        {";)", "😉"},
-        {":P", "😛"},
-        {":O", "😮"},
-        {":*", "😘"},
-        {":/", "😕"},
-        {"B)", "😎"},
-        {"o.O", "😳"},
-        {"O_o", "😲"},
-        {"3:)", "😈"},
-        {":|", "😐"},
-        {"*_*", "😍"},
-        {"^^", "😊"},
-        {"^_^", "😊"},
-        {"-_-", "😑"},
-
-        // 爱心
-        {"<3", "❤️"},
-        {"</3", "💔"},
-
-        // 其他
-        {"XD", "😆"},
-        {"T_T", "😭"},
-        {"-.-", "😒"},
-        {":'>", "😊"},
-        {"-.-'", "😅"},
-        {":')", "😂"},
-
-        // 手势
-        {":+1:", "👍"},
-        {":-1:", "👎"},
-        {":ok:", "👌"},
-
-        // 物品
-        {":coffee:", "☕"},
-        {":pizza:", "🍕"},
-        {":beer:", "🍺"},
-        {":cake:", "🎂"},
-        {":gift:", "🎁"},
-        {":star:", "⭐"},
-        {":fire:", "🔥"}
-    };
-
     // 常用表情列表（用于表情按钮菜单）
     commonEmojis = {
         "😊", "😄", "😂", "😍", "😘",
@@ -329,17 +282,37 @@ void ChatWindow::onSendMessage() {
     // 处理表情代码
     QString processedMessage = processMessageWithEmojis(message);
 
-    // 显示在聊天历史中
+    // 显示在聊天历史中（带头像）
     QTextCursor cursor = chatHistory->textCursor();
     cursor.movePosition(QTextCursor::End);
 
     // 添加时间戳
     QString timestamp = QTime::currentTime().toString("hh:mm");
-    QString fullMessage = QString("<div style='margin: 5px 0;'>"
-                                 "<span style='color: #666; font-size: 11px;'>[%1]</span> "
-                                 "<span style='color: #2196F3; font-weight: bold;'>%2:</span> "
-                                 "<span style='font-size: 14px;'>%3</span>"
+
+    // 获取当前用户头像
+    QString avatarHtml = "";
+    if (!avatarPath.isEmpty()) {
+        QPixmap avatarPixmap(avatarPath);
+        if (!avatarPixmap.isNull()) {
+            avatarPixmap = avatarPixmap.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QByteArray byteArray;
+            QBuffer buffer(&byteArray);
+            buffer.open(QIODevice::WriteOnly);
+            avatarPixmap.save(&buffer, "PNG");
+            QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
+            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px;' />").arg(base64Image);
+        }
+    }
+
+    QString fullMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+                                 "%1"
+                                 "<div>"
+                                 "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
+                                 "<span style='color: #2196F3; font-weight: bold;'>%3:</span></div>"
+                                 "<div style='font-size: 14px; margin-top: 2px;'>%4</div>"
+                                 "</div>"
                                  "</div>")
+                                 .arg(avatarHtml)
                                  .arg(timestamp)
                                  .arg(username)
                                  .arg(processedMessage.toHtmlEscaped().replace("\n", "<br>"));
@@ -359,24 +332,50 @@ void ChatWindow::onMessageReceived(const QString &message) {
 
     // 提取用户名和消息内容
     QString displayMessage;
+    QString senderUsername = "未知用户";
+
     if (message.startsWith("[") && message.contains("]: ")) {
         int bracketEnd = message.indexOf("]: ");
-        QString usernamePart = message.mid(0, bracketEnd + 2);
+        QString usernamePart = message.mid(1, bracketEnd - 1);  // 提取用户名
+        senderUsername = usernamePart;
         QString messagePart = message.mid(bracketEnd + 3);
 
         QString processedContent = processMessageWithEmojis(messagePart);
-        displayMessage = usernamePart + processedContent;
+        displayMessage = processedContent;
     } else {
         displayMessage = processedMessage;
     }
 
     // 添加时间戳
     QString timestamp = QTime::currentTime().toString("hh:mm");
-    QString fullMessage = QString("<div style='margin: 5px 0;'>"
-                                 "<span style='color: #666; font-size: 11px;'>[%1]</span> "
-                                 "%2"
+
+    // 获取发送者头像
+    QString avatarHtml = "";
+    QPixmap senderAvatar = getUserAvatar(senderUsername);
+    if (!senderAvatar.isNull()) {
+        senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        QByteArray byteArray;
+        QBuffer buffer(&byteArray);
+        buffer.open(QIODevice::WriteOnly);
+        senderAvatar.save(&buffer, "PNG");
+        QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
+        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px;' />").arg(base64Image);
+    } else {
+        // 默认头像
+        avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
+    }
+
+    QString fullMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+                                 "%1"
+                                 "<div>"
+                                 "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
+                                 "<span style='color: #4CAF50; font-weight: bold;'>%3:</span></div>"
+                                 "<div style='font-size: 14px; margin-top: 2px;'>%4</div>"
+                                 "</div>"
                                  "</div>")
+                                 .arg(avatarHtml)
                                  .arg(timestamp)
+                                 .arg(senderUsername)
                                  .arg(displayMessage.toHtmlEscaped().replace("\n", "<br>"));
 
     chatHistory->append(fullMessage);
@@ -384,15 +383,26 @@ void ChatWindow::onMessageReceived(const QString &message) {
 }
 
 void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
-    QString itemText = QString("👤 %1\n   📡 %2").arg(username).arg(ip);
+    QString itemText = QString("%1\n   📡 %2").arg(username).arg(ip);
+
+    // 创建自定义的列表项widget
+    QListWidgetItem *existingItem = nullptr;
+    int existingRow = -1;
+
     for (int i = 0; i < onlineUsersList->count(); ++i) {
         QListWidgetItem *item = onlineUsersList->item(i);
         if (item->text().contains(ip)) {
-            // 更新现有用户
-            item->setText(itemText);
-            item->setForeground(QColor("#2e7d32")); // 绿色表示在线
-            return;
+            existingItem = item;
+            existingRow = i;
+            break;
         }
+    }
+
+    if (existingItem) {
+        // 更新现有用户
+        existingItem->setText(itemText);
+        existingItem->setForeground(QColor("#2e7d32")); // 绿色表示在线
+        return;
     }
 
     // 添加新用户
@@ -400,9 +410,6 @@ void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
     item->setForeground(QColor("#2e7d32")); // 绿色
     item->setFont(QFont("Microsoft YaHei", 10));
     onlineUsersList->addItem(item);
-
-    // 显示通知
-    chatHistory->append(QString("<div style='color: #666; font-size: 12px;'>📢 %1 加入了聊天室</div>").arg(username));
 }
 
 void ChatWindow::insertEmoji(const QString &emoji) {
@@ -491,4 +498,30 @@ QString ChatWindow::getAvatarStoragePath() {
 
     // 返回头像配置文件路径
     return dir.filePath("avatar_config.txt");
+}
+
+QString ChatWindow::extractUsernameFromMessage(const QString &message) {
+    if (message.startsWith("[") && message.contains("]: ")) {
+        int endBracket = message.indexOf("]");
+        return message.mid(1, endBracket - 1);
+    }
+    return "未知用户";
+}
+
+QPixmap ChatWindow::getUserAvatar(const QString &username) {
+    // 如果是当前用户，返回当前用户的头像
+    if (username == this->username && !avatarPath.isEmpty()) {
+        QPixmap pixmap(avatarPath);
+        if (!pixmap.isNull()) {
+            return pixmap;
+        }
+    }
+
+    // 对于其他用户，返回默认头像或缓存的头像
+    if (userAvatars.contains(username)) {
+        return userAvatars[username];
+    }
+
+    // 返回空的pixmap表示没有特定头像
+    return QPixmap();
 }
