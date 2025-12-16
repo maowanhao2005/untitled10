@@ -30,12 +30,20 @@ public:
     explicit ChatWindow(QWidget *parent = nullptr);
     ~ChatWindow();
 
+
 private slots:
     void onSendMessage();
     void onMessageReceived(const QString &message);
+
+    void handleFileMessage(const QString &message);
+
     void onPeerDiscovered(const QString &ip, const QString &username);
     void insertEmoji(const QString &emoji);
     void onAvatarButtonClicked();
+    void onSendFile();
+    void onSaveFile();
+
+    void saveReceivedFile(const QString &sender, const QString &filename);
 
 private:
     void setupUI();
@@ -76,6 +84,12 @@ private:
     // 添加新的方法
     QString extractUsernameFromMessage(const QString &message);
     QPixmap getUserAvatar(const QString &username);
+
+    QPixmap cropToSquare(const QPixmap &pixmap);
+    void updateOnlineUserAvatar(const QString &username, const QPixmap &avatar);
+    QPushButton *fileButton;  // 文件发送按钮
+    QString currentFilePath;  // 当前正在传输的文件路径
+    QMap<QString, QString> receivedFiles;  // 接收的文件信息：用户名 -> 文件路径
 };
 
 #endif // CHATWINDOW_H

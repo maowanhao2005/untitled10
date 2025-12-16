@@ -14,6 +14,7 @@
 #include <QDir>
 #include <QPixmap>
 #include <QBuffer>
+#include <QPainter>
 
 ChatWindow::ChatWindow(QWidget *parent) : QWidget(parent) {
     // 初始化表情映射
@@ -97,6 +98,14 @@ void ChatWindow::setupUI() {
     avatarButton->setText("👤");
     avatarButton->setToolTip("设置头像");
 
+    // 文件发送按钮
+    fileButton = new QPushButton("📁", this);
+    fileButton->setFixedSize(40, 40);
+    fileButton->setStyleSheet("QPushButton { font-size: 20px; border: 1px solid #ccc; border-radius: 5px; background-color: #f0f0f0; }"
+                             "QPushButton:hover { background-color: #e0e0e0; }");
+    fileButton->setToolTip("发送文件");
+
+
     // 表情按钮
     emojiButton = new QToolButton(this);
     emojiButton->setText("😊");
@@ -119,6 +128,7 @@ void ChatWindow::setupUI() {
                              "QPushButton:pressed { background-color: #3d8b40; }");
 
     inputLayout->addWidget(avatarButton);
+    inputLayout->addWidget(fileButton);  // 添加文件按钮
     inputLayout->addWidget(emojiButton);
     inputLayout->addWidget(messageInput, 1);
     inputLayout->addWidget(sendButton);
@@ -157,7 +167,7 @@ void ChatWindow::setupUI() {
     // 绑定回车键发送
     connect(messageInput, &QLineEdit::returnPressed, this, &ChatWindow::onSendMessage);
     connect(sendButton, &QPushButton::clicked, this, &ChatWindow::onSendMessage);
-
+    connect(fileButton, &QPushButton::clicked, this, &ChatWindow::onSendFile);
     // 欢迎消息
 
 }
@@ -200,21 +210,6 @@ void ChatWindow::createEmojiMenu() {
     QWidget *emojiCodeWidget = new QWidget(this);
     QVBoxLayout *codeLayout = new QVBoxLayout(emojiCodeWidget);
     codeLayout->setContentsMargins(10, 10, 10, 10);
-
-    QLabel *codeTitle = new QLabel("📝 表情代码表：", this);
-    codeTitle->setStyleSheet("font-weight: bold; font-size: 12px;");
-    codeLayout->addWidget(codeTitle);
-
-    // 显示部分常用表情代码
-    QStringList commonCodes = {":) → 😊", ":D → 😄", ":P → 😛", ";-) → 😉",
-                              "<3 → ❤️", ":/ → 😕", "B) → 😎", "XD → 😆",
-                              "T_T → 😭", ":* → 😘", "o.O → 😳", ":| → 😐"};
-
-    for (const QString &code : commonCodes) {
-        QLabel *codeLabel = new QLabel(code, this);
-        codeLabel->setStyleSheet("font-size: 11px; padding: 2px;");
-        codeLayout->addWidget(codeLabel);
-    }
 
     // 创建滚动区域
     QScrollArea *scrollArea = new QScrollArea(this);
@@ -282,6 +277,27 @@ void ChatWindow::onSendMessage() {
     // 处理表情代码
     QString processedMessage = processMessageWithEmojis(message);
 
+    // 将头像信息编码到消息中
+    QString avatarData = "";
+    if (!avatarPath.isEmpty()) {
+        QPixmap avatarPixmap(avatarPath);
+        if (!avatarPixmap.isNull()) {
+            avatarPixmap = cropToSquare(avatarPixmap);
+            avatarPixmap = avatarPixmap.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QByteArray byteArray;
+            QBuffer buffer(&byteArray);
+            buffer.open(QIODevice::WriteOnly);
+            avatarPixmap.save(&buffer, "PNG");
+            avatarData = QString::fromLatin1(byteArray.toBase64().data());
+        }
+    }
+
+    // 构造带头像信息的消息
+    QString fullMessage = QString("[%1]: %2").arg(username).arg(message);
+    if (!avatarData.isEmpty()) {
+        fullMessage += QString("|AVATAR:%1").arg(avatarData);
+    }
+
     // 显示在聊天历史中（带头像）
     QTextCursor cursor = chatHistory->textCursor();
     cursor.movePosition(QTextCursor::End);
@@ -291,20 +307,14 @@ void ChatWindow::onSendMessage() {
 
     // 获取当前用户头像
     QString avatarHtml = "";
-    if (!avatarPath.isEmpty()) {
-        QPixmap avatarPixmap(avatarPath);
-        if (!avatarPixmap.isNull()) {
-            avatarPixmap = avatarPixmap.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            QByteArray byteArray;
-            QBuffer buffer(&byteArray);
-            buffer.open(QIODevice::WriteOnly);
-            avatarPixmap.save(&buffer, "PNG");
-            QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
-            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px;' />").arg(base64Image);
-        }
+    if (!avatarData.isEmpty()) {
+        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(avatarData);
+    } else {
+        // 默认头像
+        avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
     }
 
-    QString fullMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+    QString displayMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
                                  "%1"
                                  "<div>"
                                  "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
@@ -317,33 +327,145 @@ void ChatWindow::onSendMessage() {
                                  .arg(username)
                                  .arg(processedMessage.toHtmlEscaped().replace("\n", "<br>"));
 
-    chatHistory->append(fullMessage);
+    chatHistory->append(displayMessage);
     chatHistory->moveCursor(QTextCursor::End);
 
     messageInput->clear();
 
-    // 发送原始消息（包含表情代码），让接收方也进行转换
-    networkManager->sendMessageToAllPeers(message);
+    // 发送带头像信息的消息
+    networkManager->sendMessageToAllPeers(fullMessage);
+
 }
 
 void ChatWindow::onMessageReceived(const QString &message) {
-    // 收到的消息可能包含表情代码，需要转换
-    QString processedMessage = processMessageWithEmojis(message);
+    // 检查是否是文件消息
+    if (message.contains("[FILE]") && message.contains("[/FILE]")) {
+        // 解析文件消息
+        // 格式: [用户名]: [FILE]文件名[FILENAME]文件数据[/FILE]
 
+
+        int startBracket = message.indexOf('[');
+        int endBracket = message.indexOf(']');
+        QString senderUsername = message.mid(startBracket + 1, endBracket - startBracket - 1);
+
+        int fileStart = message.indexOf("[FILE]") + 6;  // 6 是 "[FILE]" 的长度
+        int filenameStart = message.indexOf("[FILENAME]");
+        int fileEnd = message.indexOf("[/FILE]");
+
+        if (fileStart >= 6 && filenameStart > fileStart && fileEnd > filenameStart) {
+            QString fileName = message.mid(fileStart, filenameStart - fileStart);
+            QString fileDataBase64 = message.mid(filenameStart + 10, fileEnd - filenameStart - 10);  // 10 是 "[FILENAME]" 的长度
+
+            // 解码文件数据
+            QByteArray fileData = QByteArray::fromBase64(fileDataBase64.toUtf8());
+
+            // 添加时间戳
+            QString timestamp = QTime::currentTime().toString("hh:mm");
+
+            // 获取发送者头像
+            QString avatarHtml = "";
+            QPixmap senderAvatar = getUserAvatar(senderUsername);
+            if (!senderAvatar.isNull()) {
+                senderAvatar = cropToSquare(senderAvatar);
+                senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                QByteArray byteArray;
+                QBuffer buffer(&byteArray);
+                buffer.open(QIODevice::WriteOnly);
+                senderAvatar.save(&buffer, "PNG");
+                QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
+                avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
+            } else {
+                // 默认头像
+                avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
+            }
+
+            // 直接询问用户是否保存文件
+            QMessageBox msgBox;
+            msgBox.setWindowTitle("收到文件");
+            msgBox.setText(QString("%1 向您发送了一个文件:\n%2 (%3 字节)")
+                          .arg(senderUsername)
+                          .arg(fileName)
+                          .arg(fileData.size()));
+            msgBox.setInformativeText("是否保存该文件?");
+            msgBox.setStandardButtons(QMessageBox::Save | QMessageBox::Discard);
+            msgBox.setDefaultButton(QMessageBox::Save);
+
+            if (msgBox.exec() == QMessageBox::Save) {
+                // 打开保存文件对话框
+                QString saveFileName = QFileDialog::getSaveFileName(this, tr("保存文件"), fileName, tr("所有文件 (*)"));
+
+                if (!saveFileName.isEmpty()) {
+                    QFile saveFile(saveFileName);
+                    if (saveFile.open(QIODevice::WriteOnly)) {
+                        saveFile.write(fileData);
+                        saveFile.close();
+                        QMessageBox::information(this, "成功", "文件已保存到：" + saveFileName);
+                    } else {
+                        QMessageBox::warning(this, "错误", "无法保存文件：" + saveFileName);
+                    }
+                }
+            }
+
+            // 显示文件接收消息
+            QString fileMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+                                         "%1"
+                                         "<div>"
+                                         "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
+                                         "<span style='color: #4CAF50; font-weight: bold;'>%3:</span></div>"
+                                         "<div style='font-size: 14px; margin-top: 2px;'>发送了文件: <strong>%4</strong> (%5 bytes) [<span style='color: #2196F3;'>文件传输已完成</span>]</div>"
+                                         "</div>"
+                                         "</div>")
+                                         .arg(avatarHtml)
+                                         .arg(timestamp)
+                                         .arg(senderUsername)
+                                         .arg(fileName)
+                                         .arg(fileData.size());
+
+            chatHistory->append(fileMessage);
+            chatHistory->moveCursor(QTextCursor::End);
+        }
+        return;
+    }
+
+    // 处理普通文本消息（原有代码）
     // 提取用户名和消息内容
     QString displayMessage;
     QString senderUsername = "未知用户";
+    QString avatarData = "";
 
-    if (message.startsWith("[") && message.contains("]: ")) {
-        int bracketEnd = message.indexOf("]: ");
-        QString usernamePart = message.mid(1, bracketEnd - 1);  // 提取用户名
+    QString actualMessage = message;
+
+    // 检查是否有头像数据
+    if (message.contains("|AVATAR:")) {
+        int avatarPos = message.lastIndexOf("|AVATAR:");
+        actualMessage = message.left(avatarPos);
+        avatarData = message.mid(avatarPos + 8); // 跳过 "|AVATAR:" 前缀
+    }
+
+    if (actualMessage.startsWith("[") && actualMessage.contains("]: ")) {
+        int bracketEnd = actualMessage.indexOf("]: ");
+        QString usernamePart = actualMessage.mid(1, bracketEnd - 1);  // 提取用户名
         senderUsername = usernamePart;
-        QString messagePart = message.mid(bracketEnd + 3);
+        QString messagePart = actualMessage.mid(bracketEnd + 3);
 
+        // 处理表情代码
         QString processedContent = processMessageWithEmojis(messagePart);
         displayMessage = processedContent;
     } else {
-        displayMessage = processedMessage;
+        displayMessage = processMessageWithEmojis(actualMessage);
+    }
+
+    // 如果有头像数据，存储到用户头像缓存中
+    if (!avatarData.isEmpty() && !senderUsername.isEmpty()) {
+        QPixmap avatarPixmap;
+        QByteArray avatarBytes = QByteArray::fromBase64(avatarData.toLatin1());
+        avatarPixmap.loadFromData(avatarBytes);
+        if (!avatarPixmap.isNull()) {
+            userAvatars[senderUsername] = avatarPixmap;
+
+            // 更新在线用户列表中的头像
+            updateOnlineUserAvatar(senderUsername, avatarPixmap);
+        }
     }
 
     // 添加时间戳
@@ -351,18 +473,24 @@ void ChatWindow::onMessageReceived(const QString &message) {
 
     // 获取发送者头像
     QString avatarHtml = "";
-    QPixmap senderAvatar = getUserAvatar(senderUsername);
-    if (!senderAvatar.isNull()) {
-        senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        QByteArray byteArray;
-        QBuffer buffer(&byteArray);
-        buffer.open(QIODevice::WriteOnly);
-        senderAvatar.save(&buffer, "PNG");
-        QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
-        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px;' />").arg(base64Image);
+    if (!avatarData.isEmpty()) {
+        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(avatarData);
     } else {
-        // 默认头像
-        avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
+        // 尝试从缓存获取头像
+        QPixmap senderAvatar = getUserAvatar(senderUsername);
+        if (!senderAvatar.isNull()) {
+            senderAvatar = cropToSquare(senderAvatar);
+            senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QByteArray byteArray;
+            QBuffer buffer(&byteArray);
+            buffer.open(QIODevice::WriteOnly);
+            senderAvatar.save(&buffer, "PNG");
+            QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
+            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
+        } else {
+            // 默认头像
+            avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
+        }
     }
 
     QString fullMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
@@ -382,9 +510,79 @@ void ChatWindow::onMessageReceived(const QString &message) {
     chatHistory->moveCursor(QTextCursor::End);
 }
 
-void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
-    QString itemText = QString("%1\n   📡 %2").arg(username).arg(ip);
+void ChatWindow::handleFileMessage(const QString &message) {
+    // 解析文件消息
+    // 格式: [用户名]: [FILE]文件名[FILENAME]文件数据[/FILE]
 
+    int startBracket = message.indexOf('[');
+    int endBracket = message.indexOf(']');
+    QString senderUsername = message.mid(startBracket + 1, endBracket - startBracket - 1);
+
+    int fileStart = message.indexOf("[FILE]") + 6;  // 6 是 "[FILE]" 的长度
+    int filenameStart = message.indexOf("[FILENAME]");
+    int fileEnd = message.indexOf("[/FILE]");
+
+    if (fileStart >= 6 && filenameStart > fileStart && fileEnd > filenameStart) {
+        QString fileName = message.mid(fileStart, filenameStart - fileStart);
+        QString fileDataBase64 = message.mid(filenameStart + 10, fileEnd - filenameStart - 10);  // 10 是 "[FILENAME]" 的长度
+
+        // 解码文件数据
+        QByteArray fileData = QByteArray::fromBase64(fileDataBase64.toUtf8());
+
+        // 添加时间戳
+        QString timestamp = QTime::currentTime().toString("hh:mm");
+
+        // 获取发送者头像
+        QString avatarHtml = "";
+        QPixmap senderAvatar = getUserAvatar(senderUsername);
+        if (!senderAvatar.isNull()) {
+            senderAvatar = cropToSquare(senderAvatar);
+            senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QByteArray byteArray;
+            QBuffer buffer(&byteArray);
+            buffer.open(QIODevice::WriteOnly);
+            senderAvatar.save(&buffer, "PNG");
+            QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
+            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' style='vertical-align: middle; margin-right: 5px; border-radius: 16px;' />").arg(base64Image);
+        } else {
+            // 默认头像
+            avatarHtml = "<div style='width: 32px; height: 32px; background-color: #ddd; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px;'>👤</div>";
+        }
+
+        // 创建保存文件的链接
+        QString saveLink = QString("<a href='#' id='save_%1_%2' style='color: #2196F3; text-decoration: underline;'>保存文件</a>")
+                          .arg(senderUsername)
+                          .arg(fileName);
+
+        // 显示文件接收消息
+        QString fileMessage = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+                                     "%1"
+                                     "<div>"
+                                     "<div><span style='color: #666; font-size: 11px;'>[%2]</span> "
+                                     "<span style='color: #4CAF50; font-weight: bold;'>%3:</span></div>"
+                                     "<div style='font-size: 14px; margin-top: 2px;'>发送了文件: <strong>%4</strong> (%5 bytes) %6</div>"
+                                     "</div>"
+                                     "</div>")
+                                     .arg(avatarHtml)
+                                     .arg(timestamp)
+                                     .arg(senderUsername)
+                                     .arg(fileName)
+                                     .arg(fileData.size())
+                                     .arg(saveLink);
+
+        chatHistory->append(fileMessage);
+        chatHistory->moveCursor(QTextCursor::End);
+
+        // 临时存储文件数据，等待用户保存
+        QString fileKey = QString("%1_%2").arg(senderUsername).arg(fileName);
+        receivedFiles[fileKey] = QString::fromLatin1(fileData.toBase64().data());
+
+        // 连接保存链接的点击事件（简化处理，实际项目中可能需要更复杂的处理）
+        // 这里我们通过一个特殊的消息来触发保存
+    }
+}
+
+void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
     // 创建自定义的列表项widget
     QListWidgetItem *existingItem = nullptr;
     int existingRow = -1;
@@ -398,10 +596,21 @@ void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
         }
     }
 
+    QString itemText = QString("%1\n   📡 %2").arg(username).arg(ip);
+
+    // 创建带头像的列表项
     if (existingItem) {
         // 更新现有用户
         existingItem->setText(itemText);
         existingItem->setForeground(QColor("#2e7d32")); // 绿色表示在线
+
+        // 检查是否有缓存的头像
+        if (userAvatars.contains(username)) {
+            QPixmap userAvatar = userAvatars[username];
+            userAvatar = cropToSquare(userAvatar);
+            userAvatar = userAvatar.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            existingItem->setIcon(QIcon(userAvatar));
+        }
         return;
     }
 
@@ -409,6 +618,29 @@ void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
     QListWidgetItem *item = new QListWidgetItem(itemText, onlineUsersList);
     item->setForeground(QColor("#2e7d32")); // 绿色
     item->setFont(QFont("Microsoft YaHei", 10));
+
+    // 设置用户头像（如果有）
+    QPixmap userAvatar = getUserAvatar(username);
+    if (!userAvatar.isNull()) {
+        userAvatar = cropToSquare(userAvatar);
+        userAvatar = userAvatar.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        item->setIcon(QIcon(userAvatar));
+    } else {
+        // 创建默认头像
+        QPixmap defaultAvatar(24, 24);
+        defaultAvatar.fill(Qt::transparent);
+        QPainter painter(&defaultAvatar);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setBrush(QColor("#ddd"));
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(0, 0, 24, 24);
+        painter.setPen(QColor("#666"));
+        painter.setFont(QFont("Segoe UI", 12));
+        painter.drawText(defaultAvatar.rect(), Qt::AlignCenter, "👤");
+        painter.end();
+        item->setIcon(QIcon(defaultAvatar));
+    }
+
     onlineUsersList->addItem(item);
 }
 
@@ -431,14 +663,16 @@ void ChatWindow::onAvatarButtonClicked() {
                                                    tr("Image Files (*.png *.jpg *.bmp *.jpeg *.gif)"));
 
     if (!fileName.isEmpty()) {
-        // 保存头像
-        saveUserAvatar(fileName);
-
-        // 显示头像
+        // 加载并裁剪头像
         QPixmap pixmap(fileName);
         if (!pixmap.isNull()) {
-            pixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            avatarButton->setIcon(QIcon(pixmap));
+            pixmap = cropToSquare(pixmap);
+            // 保存头像
+            saveUserAvatar(fileName);
+
+            // 显示头像
+            QPixmap scaledPixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            avatarButton->setIcon(QIcon(scaledPixmap));
             avatarButton->setIconSize(QSize(40, 40));
             avatarButton->setText(""); // 清除文字
         }
@@ -462,8 +696,9 @@ void ChatWindow::loadUserAvatar() {
                 // 显示头像
                 QPixmap pixmap(avatarPath);
                 if (!pixmap.isNull()) {
-                    pixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                    avatarButton->setIcon(QIcon(pixmap));
+                    pixmap = cropToSquare(pixmap);
+                    QPixmap scaledPixmap = pixmap.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    avatarButton->setIcon(QIcon(scaledPixmap));
                     avatarButton->setIconSize(QSize(40, 40));
                     avatarButton->setText(""); // 清除文字
                 }
@@ -513,15 +748,122 @@ QPixmap ChatWindow::getUserAvatar(const QString &username) {
     if (username == this->username && !avatarPath.isEmpty()) {
         QPixmap pixmap(avatarPath);
         if (!pixmap.isNull()) {
-            return pixmap;
+            return cropToSquare(pixmap);
         }
     }
 
     // 对于其他用户，返回默认头像或缓存的头像
     if (userAvatars.contains(username)) {
-        return userAvatars[username];
+        return cropToSquare(userAvatars[username]);
     }
 
     // 返回空的pixmap表示没有特定头像
     return QPixmap();
+}
+
+QPixmap ChatWindow::cropToSquare(const QPixmap &pixmap) {
+    if (pixmap.isNull()) return pixmap;
+
+    int size = qMin(pixmap.width(), pixmap.height());
+    int x = (pixmap.width() - size) / 2;
+    int y = (pixmap.height() - size) / 2;
+
+    return pixmap.copy(x, y, size, size);
+}
+
+void ChatWindow::updateOnlineUserAvatar(const QString &username, const QPixmap &avatar) {
+    for (int i = 0; i < onlineUsersList->count(); ++i) {
+        QListWidgetItem *item = onlineUsersList->item(i);
+        QString itemText = item->text();
+
+        // 检查用户名是否匹配
+        if (itemText.startsWith(username + "\n")) {
+            QPixmap scaledAvatar = cropToSquare(avatar);
+            scaledAvatar = scaledAvatar.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            item->setIcon(QIcon(scaledAvatar));
+            break;
+        }
+    }
+}
+
+void ChatWindow::onSendFile() {
+    // 打开文件选择对话框
+    QString fileName = QFileDialog::getOpenFileName(this, tr("选择要发送的文件"), "", tr("所有文件 (*)"));
+
+    if (!fileName.isEmpty()) {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            QMessageBox::warning(this, "错误", "无法打开文件：" + fileName);
+            return;
+        }
+
+        // 读取文件内容
+        QByteArray fileData = file.readAll();
+        file.close();
+
+        // 获取文件名
+        QFileInfo fileInfo(fileName);
+        QString displayName = fileInfo.fileName();
+
+        // 将文件编码为base64
+        QByteArray base64Data = fileData.toBase64();
+
+        // 构造文件传输消息
+        QString fileMessage = QString("[%1]: [FILE]%2[FILENAME]%3[FILEDATA]%4[/FILE]")
+                             .arg(username)
+                             .arg(displayName)
+                             .arg(QString::fromUtf8(base64Data));
+
+        // 发送文件消息
+        networkManager->sendMessageToAllPeers(fileMessage);
+
+        // 在聊天历史中显示发送的文件
+        QString timestamp = QTime::currentTime().toString("hh:mm");
+        QString fileHtml = QString("<div style='margin: 5px 0; display: flex; align-items: flex-start;'>"
+                                  "<div style='width: 32px; height: 32px; background-color: #2196F3; border-radius: 16px; margin-right: 5px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: white;'>📁</div>"
+                                  "<div>"
+                                  "<div><span style='color: #666; font-size: 11px;'>[%1]</span> "
+                                  "<span style='color: #2196F3; font-weight: bold;'>%2:</span></div>"
+                                  "<div style='font-size: 14px; margin-top: 2px;'>发送了文件: <strong>%3</strong> (%4 bytes)</div>"
+                                  "</div>"
+                                  "</div>")
+                                  .arg(timestamp)
+                                  .arg(username)
+                                  .arg(displayName)
+                                  .arg(fileData.size());
+
+        chatHistory->append(fileHtml);
+        chatHistory->moveCursor(QTextCursor::End);
+    }
+}
+
+void ChatWindow::onSaveFile() {
+    // 这个方法将在用户点击保存文件链接时调用
+    // 实际实现会在 onMessageReceived 中处理
+}
+
+void ChatWindow::saveReceivedFile(const QString &sender, const QString &filename) {
+    QString fileKey = QString("%1_%2").arg(sender).arg(filename);
+
+    if (receivedFiles.contains(fileKey)) {
+        // 解码文件数据
+        QByteArray fileData = QByteArray::fromBase64(receivedFiles[fileKey].toLatin1());
+
+        // 打开保存文件对话框
+        QString saveFileName = QFileDialog::getSaveFileName(this, tr("保存文件"), filename, tr("所有文件 (*)"));
+
+        if (!saveFileName.isEmpty()) {
+            QFile saveFile(saveFileName);
+            if (saveFile.open(QIODevice::WriteOnly)) {
+                saveFile.write(fileData);
+                saveFile.close();
+                QMessageBox::information(this, "成功", "文件已保存到：" + saveFileName);
+            } else {
+                QMessageBox::warning(this, "错误", "无法保存文件：" + saveFileName);
+            }
+        }
+
+        // 从临时存储中移除
+        receivedFiles.remove(fileKey);
+    }
 }
