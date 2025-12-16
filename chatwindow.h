@@ -30,6 +30,7 @@ public:
     explicit ChatWindow(QWidget *parent = nullptr);
     ~ChatWindow();
 
+
 private slots:
     void onSendMessage();
     void onMessageReceived(const QString &message);

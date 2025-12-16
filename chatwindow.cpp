@@ -343,6 +343,7 @@ void ChatWindow::onMessageReceived(const QString &message) {
         // 解析文件消息
         // 格式: [用户名]: [FILE]文件名[FILENAME]文件数据[/FILE]
 
+
         int startBracket = message.indexOf('[');
         int endBracket = message.indexOf(']');
         QString senderUsername = message.mid(startBracket + 1, endBracket - startBracket - 1);
