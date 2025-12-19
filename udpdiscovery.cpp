@@ -51,5 +51,5 @@ void UDPDiscovery::onBroadcastTimeout() {
     obj["username"] = username;
     QJsonDocument doc(obj);
     QByteArray data = doc.toJson(QJsonDocument::Compact);
-    udpSocket->writeDatagram(data,  QHostAddress("192.168.3.255"), broadcastPort);
+    udpSocket->writeDatagram(data,  QHostAddress("192.168.162.255"), broadcastPort);
 }

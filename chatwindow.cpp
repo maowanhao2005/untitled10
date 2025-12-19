@@ -37,16 +37,29 @@ ChatWindow::ChatWindow(const QString &username, const QString &avatarPath, QWidg
     setupConnections();
     createEmojiMenu();
 
+    // 初始化下载路径
+    downloadPath = getDefaultDownloadPath();
+
     // 加载用户头像
     loadUserAvatar();
 
     networkManager = new NetworkManager(this, this->username);
     connect(networkManager, &NetworkManager::messageReceived, this, &ChatWindow::onMessageReceived);
     connect(networkManager, &NetworkManager::peerDiscovered, this, &ChatWindow::onPeerDiscovered);
+    connect(networkManager, &NetworkManager::fileReceived, this, &ChatWindow::handleFileMessage);
     // 连接头像按钮点击信号
     connect(avatarButton, &QPushButton::clicked, this, &ChatWindow::onAvatarButtonClicked);
 
     statusLabel->setText(QString("就绪 - 用户名: %1 - 点击😊按钮发送表情").arg(this->username));
+
+    // 显示欢迎消息
+    QTimer::singleShot(100, this, [this, username]() {
+        QString welcomeMessage = QString("<div style='text-align: center; color: #666; padding: 10px;'>"
+                                        "欢迎 <b>%1</b> 加入P2P聊天室！"
+                                        "<br><small>现在可以开始与在线用户聊天了</small>"
+                                        "</div>").arg(username);
+        chatHistory->append(welcomeMessage);
+    });
 }
 
 ChatWindow::~ChatWindow() {
@@ -89,7 +102,7 @@ void ChatWindow::initEmojiMap() {
 }
 
 void ChatWindow::setupUI() {
-    setWindowTitle("P2P 聊天室 - 支持表情包");
+    setWindowTitle("P2P 聊天室");
     resize(900, 700);
 
     // 设置窗口图标
@@ -105,6 +118,35 @@ void ChatWindow::setupUI() {
     // 分割布局：聊天历史 + 在线用户列表
     QHBoxLayout *splitLayout = new QHBoxLayout();
     splitLayout->setSpacing(10);
+
+    // 聊天历史区域
+    chatHistory = new QTextEdit(this);
+    chatHistory->setReadOnly(true);
+    chatHistory->setFont(QFont("Microsoft YaHei", 11));
+    chatHistory->setStyleSheet("QTextEdit { "
+                              "background-color: #f9f9f9; "
+                              "border: 1px solid #ccc; "
+                              "border-radius: 8px; "
+                              "padding: 10px; "
+                              "}");
+
+
+    // 添加服务器模式按钮
+    QHBoxLayout *serverLayout = new QHBoxLayout();  // 正确声明变量
+    serverModeButton = new QPushButton("设为服务器", this);
+    serverModeButton->setStyleSheet("QPushButton { "
+                                   "padding: 6px 12px; "
+                                   "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+                                   "stop:0 #ff9800, stop:1 #f57c00); "
+                                   "color: white; "
+                                   "border: none; "
+                                   "border-radius: 6px; "
+                                   "font-weight: bold; "
+                                   "font-size: 12px; "
+                                   "}");
+    serverLayout->addWidget(serverModeButton);
+    serverLayout->addStretch();
+    mainLayout->addLayout(serverLayout, 0);
 
     // 聊天历史区域
     chatHistory = new QTextEdit(this);
@@ -254,6 +296,41 @@ void ChatWindow::setupUI() {
     inputLayout->addWidget(sendButton);
     mainLayout->addLayout(inputLayout);
 
+    // 添加服务器模式按钮
+    serverModeButton->setStyleSheet("QPushButton { "
+                                   "padding: 6px 12px; "
+                                   "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+                                   "stop:0 #ff9800, stop:1 #f57c00); "
+                                   "color: white; "
+                                   "border: none; "
+                                   "border-radius: 6px; "
+                                   "font-weight: bold; "
+                                   "font-size: 12px; "
+                                   "}");
+    serverLayout->addWidget(serverModeButton);
+    serverLayout->addStretch();
+    mainLayout->addLayout(serverLayout, 0);
+
+    // 添加下载路径设置按钮
+    QHBoxLayout *downloadPathLayout = new QHBoxLayout();
+    downloadPathButton = new QPushButton("📂 设置下载目录", this);
+    downloadPathButton->setStyleSheet("QPushButton { "
+                                     "padding: 6px 12px; "
+                                     "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+                                     "stop:0 #2196F3, stop:1 #1976D2); "
+                                     "color: white; "
+                                     "border: none; "
+                                     "border-radius: 6px; "
+                                     "font-weight: bold; "
+                                     "font-size: 12px; "
+                                     "}");
+    downloadPathLayout->addWidget(downloadPathButton);
+    downloadPathLayout->addStretch();
+    mainLayout->addLayout(downloadPathLayout, 0);
+
+    // 连接下载路径按钮信号
+    connect(downloadPathButton, &QPushButton::clicked, this, &ChatWindow::selectDownloadPath);
+
     // 状态栏
     statusLabel = new QLabel(this);
     statusLabel->setStyleSheet("padding: 8px 12px; "
@@ -277,6 +354,35 @@ void ChatWindow::setupUI() {
                                         "</div>").arg(username);
         chatHistory->append(welcomeMessage);
     });
+
+    connect(serverModeButton, &QPushButton::clicked, this, [this]() {
+       isServer = !isServer;
+       networkManager->setIsServer(isServer);
+       serverModeButton->setText(isServer ? "取消服务器模式" : "设为服务器");
+       serverModeButton->setStyleSheet(isServer ?
+           "QPushButton { "
+           "padding: 6px 12px; "
+           "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+           "stop:0 #f44336, stop:1 #d32f2f); "
+           "color: white; "
+           "border: none; "
+           "border-radius: 6px; "
+           "font-weight: bold; "
+           "font-size: 12px; "
+           "}" :
+           "QPushButton { "
+           "padding: 6px 12px; "
+           "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+           "stop:0 #ff9800, stop:1 #f57c00); "
+           "color: white; "
+           "border: none; "
+           "border-radius: 6px; "
+           "font-weight: bold; "
+           "font-size: 12px; "
+           "}");
+       statusLabel->setText(QString("就绪 - 用户名: %1 - %2").arg(username)
+                           .arg(isServer ? "服务器模式" : "客户端模式"));
+   });
 }
 
 void ChatWindow::createEmojiMenu() {
@@ -325,7 +431,7 @@ void ChatWindow::createEmojiMenu() {
         QString emoji = commonEmojis[i];
         connect(emojiBtn, &QPushButton::clicked, this, [this, emoji]() {
             insertEmoji(emoji);
-            emojiMenu->close();
+            // emojiMenu->close();
         });
 
         gridLayout->addWidget(emojiBtn, i / columns, i % columns);
@@ -577,188 +683,225 @@ void ChatWindow::handleFileMessage(const QString &message) {
     int endBracket = message.indexOf(']');
     QString senderUsername = message.mid(startBracket + 1, endBracket - startBracket - 1);
 
+    // 正确解析各部分内容
     int fileStart = message.indexOf("[FILE]") + 6;
-    int filenameStart = message.indexOf("[FILENAME]");
-    int extensionStart = message.indexOf("[FILEEXTENSION]");
-    int filetypeStart = message.indexOf("[FILETYPE]");
-    int filesizeStart = message.indexOf("[FILESIZE]");
-    int filedataStart = message.indexOf("[FILEDATA]");
     int fileEnd = message.indexOf("[/FILE]");
 
-    if (fileStart >= 6 && filenameStart > fileStart && extensionStart > filenameStart &&
-        filetypeStart > extensionStart && filesizeStart > filetypeStart && filedataStart > filesizeStart && fileEnd > filedataStart) {
+    if (fileStart < 6 || fileEnd <= fileStart) return;
 
-        QString fileName = message.mid(fileStart, filenameStart - fileStart);
-        QString fileExtension = message.mid(filenameStart + 10, extensionStart - filenameStart - 10);
-        QString fileType = message.mid(extensionStart + 15, filetypeStart - extensionStart - 15);
-        QString fileSizeStr = message.mid(filetypeStart + 10, filesizeStart - filetypeStart - 10);
+    QString fileContent = message.mid(fileStart, fileEnd - fileStart);
 
-        // 提取文件数据部分
-        QString filePart = message.mid(filedataStart + 10, fileEnd - filedataStart - 10);
-        int thumbnailPos = filePart.indexOf("[THUMBNAIL]");
-        QString fileDataBase64, thumbnailBase64;
+    // 解析各部分
+    QString fileName, fileExtension, fileType, fileSizeStr, fileDataBase64, thumbnailBase64;
+    qint64 fileSize = 0;
 
-        if (thumbnailPos != -1) {
-            fileDataBase64 = filePart.left(thumbnailPos);
-            thumbnailBase64 = filePart.mid(thumbnailPos + 11);
-        } else {
-            fileDataBase64 = filePart;
+    // 解析文件名
+    int filenameStart = fileContent.indexOf("[FILENAME]");
+    if (filenameStart != -1) {
+        int filenameEnd = fileContent.indexOf("[FILEEXTENSION]");
+        if (filenameEnd == -1) filenameEnd = fileContent.indexOf("[FILETYPE]");
+        if (filenameEnd != -1) {
+            fileName = fileContent.mid(filenameStart + 10, filenameEnd - filenameStart - 10);
         }
-
-        // 解码文件数据
-        QByteArray fileData = QByteArray::fromBase64(fileDataBase64.toUtf8());
-        qint64 fileSize = fileSizeStr.toLongLong();
-
-        bool isImage = (fileType == "image");
-        bool isVideo = (fileType == "video");
-
-        // 添加时间戳
-        QString timestamp = QTime::currentTime().toString("hh:mm:ss");
-
-        // 获取发送者头像
-        QString avatarHtml = "";
-        QPixmap senderAvatar = getUserAvatar(senderUsername);
-        if (!senderAvatar.isNull()) {
-            senderAvatar = cropToSquare(senderAvatar);
-            senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            QByteArray byteArray;
-            QBuffer buffer(&byteArray);
-            buffer.open(QIODevice::WriteOnly);
-            senderAvatar.save(&buffer, "PNG");
-            QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
-            avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' "
-                                "style='vertical-align: middle; margin-right: 8px; border-radius: 16px; "
-                                "border: 1px solid #4CAF50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);' />").arg(base64Image);
-        } else {
-            avatarHtml = "<div style='width: 32px; height: 32px; background: linear-gradient(135deg, #4CAF50, #45a049); "
-                        "border-radius: 16px; margin-right: 8px; display: flex; align-items: center; "
-                        "justify-content: center; font-size: 16px; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>👤</div>";
-        }
-
-        // 根据文件类型显示不同内容
-        QString fileMessage;
-        if (isImage) {
-            QString thumbnailHtml = "";
-            if (!thumbnailBase64.isEmpty()) {
-                thumbnailHtml = QString("<img src='data:image/jpeg;base64,%1' "
-                                       "style='max-width: 120px; max-height: 120px; margin-top: 8px; "
-                                       "border-radius: 8px; border: 1px solid #ddd; "
-                                       "box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer;' "
-                                       "onclick='this.style.maxWidth=\"none\"; this.style.maxHeight=\"none\"'/>")
-                                       .arg(thumbnailBase64);
-            }
-
-            fileMessage = QString("<div style='margin: 12px 0; display: flex; align-items: flex-start;'>"
-                                 "%1"
-                                 "<div style='flex: 1;'>"
-                                 "<div style='display: flex; align-items: center; margin-bottom: 4px;'>"
-                                 "<span style='color: #4CAF50; font-weight: bold; font-size: 14px;'>%2</span>"
-                                 "<span style='color: #999; font-size: 11px; margin-left: 8px;'>%3</span>"
-                                 "</div>"
-                                 "<div style='background: #f9f9f9; padding: 12px; border-radius: 12px; "
-                                 "border: 1px dashed #4CAF50;'>"
-                                 "<div style='color: #666; margin-bottom: 8px;'>"
-                                 "📸 发送了图片：<b>%4</b> (%5 KB)"
-                                 "</div>"
-                                 "%6"
-                                 "<br>"
-                                 "<button onclick='saveReceivedFile(\"%2\", \"%4\")' "
-                                 "style='margin-top: 8px; padding: 6px 12px; "
-                                 "background: linear-gradient(135deg, #4CAF50, #45a049); "
-                                 "color: white; border: none; border-radius: 6px; "
-                                 "font-size: 12px; cursor: pointer;'>"
-                                 "💾 保存图片"
-                                 "</button>"
-                                 "</div>"
-                                 "</div>"
-                                 "</div>")
-                                 .arg(avatarHtml)
-                                 .arg(senderUsername)
-                                 .arg(timestamp)
-                                 .arg(fileName)
-                                 .arg(fileSize / 1024)
-                                 .arg(thumbnailHtml);
-        } else if (isVideo) {
-            fileMessage = QString("<div style='margin: 12px 0; display: flex; align-items: flex-start;'>"
-                                 "%1"
-                                 "<div style='flex: 1;'>"
-                                 "<div style='display: flex; align-items: center; margin-bottom: 4px;'>"
-                                 "<span style='color: #4CAF50; font-weight: bold; font-size: 14px;'>%2</span>"
-                                 "<span style='color: #999; font-size: 11px; margin-left: 8px;'>%3</span>"
-                                 "</div>"
-                                 "<div style='background: #f9f9f9; padding: 12px; border-radius: 12px; "
-                                 "border: 1px dashed #4CAF50;'>"
-                                 "<div style='color: #666; margin-bottom: 8px;'>"
-                                 "🎬 发送了视频：<b>%4</b> (%5 KB)"
-                                 "</div>"
-                                 "<div style='width: 120px; height: 120px; "
-                                 "background: linear-gradient(135deg, #333, #555); "
-                                 "border-radius: 8px; margin-top: 8px; display: flex; "
-                                 "align-items: center; justify-content: center; color: white; "
-                                 "font-size: 24px;'>"
-                                 "🎬"
-                                 "</div>"
-                                 "<br>"
-                                 "<button onclick='saveReceivedFile(\"%2\", \"%4\")' "
-                                 "style='margin-top: 8px; padding: 6px 12px; "
-                                 "background: linear-gradient(135deg, #4CAF50, #45a049); "
-                                 "color: white; border: none; border-radius: 6px; "
-                                 "font-size: 12px; cursor: pointer;'>"
-                                 "📥 保存视频"
-                                 "</button>"
-                                 "</div>"
-                                 "</div>"
-                                 "</div>")
-                                 .arg(avatarHtml)
-                                 .arg(senderUsername)
-                                 .arg(timestamp)
-                                 .arg(fileName)
-                                 .arg(fileSize / 1024);
-        } else {
-            fileMessage = QString("<div style='margin: 12px 0; display: flex; align-items: flex-start;'>"
-                                 "%1"
-                                 "<div style='flex: 1;'>"
-                                 "<div style='display: flex; align-items: center; margin-bottom: 4px;'>"
-                                 "<span style='color: #4CAF50; font-weight: bold; font-size: 14px;'>%2</span>"
-                                 "<span style='color: #999; font-size: 11px; margin-left: 8px;'>%3</span>"
-                                 "</div>"
-                                 "<div style='background: #f9f9f9; padding: 12px; border-radius: 12px; "
-                                 "border: 1px dashed #4CAF50;'>"
-                                 "<div style='color: #666; margin-bottom: 8px;'>"
-                                 "📁 发送了文件：<b>%4</b> (%5 KB)"
-                                 "</div>"
-                                 "<div style='width: 120px; height: 120px; "
-                                 "background: linear-gradient(135deg, #e0e0e0, #f0f0f0); "
-                                 "border-radius: 8px; margin-top: 8px; display: flex; "
-                                 "align-items: center; justify-content: center; color: #666; "
-                                 "font-size: 32px;'>"
-                                 "📁"
-                                 "</div>"
-                                 "<br>"
-                                 "<button onclick='saveReceivedFile(\"%2\", \"%4\")' "
-                                 "style='margin-top: 8px; padding: 6px 12px; "
-                                 "background: linear-gradient(135deg, #4CAF50, #45a049); "
-                                 "color: white; border: none; border-radius: 6px; "
-                                 "font-size: 12px; cursor: pointer;'>"
-                                 "💾 保存文件"
-                                 "</button>"
-                                 "</div>"
-                                 "</div>"
-                                 "</div>")
-                                 .arg(avatarHtml)
-                                 .arg(senderUsername)
-                                 .arg(timestamp)
-                                 .arg(fileName)
-                                 .arg(fileSize / 1024);
-        }
-
-        chatHistory->append(fileMessage);
-        chatHistory->moveCursor(QTextCursor::End);
-
-        // 临时存储文件数据，等待用户保存
-        QString fileKey = QString("%1_%2").arg(senderUsername).arg(fileName);
-        receivedFiles[fileKey] = QString::fromLatin1(fileData.toBase64().data());
     }
+
+    // 解析文件扩展名
+    int extensionStart = fileContent.indexOf("[FILEEXTENSION]");
+    if (extensionStart != -1) {
+        int extensionEnd = fileContent.indexOf("[FILETYPE]");
+        if (extensionEnd != -1) {
+            fileExtension = fileContent.mid(extensionStart + 15, extensionEnd - extensionStart - 15);
+        }
+    }
+
+    // 解析文件类型
+    int filetypeStart = fileContent.indexOf("[FILETYPE]");
+    if (filetypeStart != -1) {
+        int filetypeEnd = fileContent.indexOf("[FILESIZE]");
+        if (filetypeEnd != -1) {
+            fileType = fileContent.mid(filetypeStart + 10, filetypeEnd - filetypeStart - 10);
+        }
+    }
+
+    // 解析文件大小
+    int filesizeStart = fileContent.indexOf("[FILESIZE]");
+    if (filesizeStart != -1) {
+        int filesizeEnd = fileContent.indexOf("[FILEDATA]");
+        if (filesizeEnd != -1) {
+            fileSizeStr = fileContent.mid(filesizeStart + 10, filesizeEnd - filesizeStart - 10);
+            fileSize = fileSizeStr.toLongLong();
+        }
+    }
+
+    // 解析文件数据
+    int filedataStart = fileContent.indexOf("[FILEDATA]");
+    if (filedataStart != -1) {
+        int filedataEnd = fileContent.indexOf("[THUMBNAIL]");
+        if (filedataEnd == -1) filedataEnd = fileContent.length();
+        fileDataBase64 = fileContent.mid(filedataStart + 10, filedataEnd - filedataStart - 10);
+    }
+
+    // 解析缩略图数据
+    int thumbnailStart = fileContent.indexOf("[THUMBNAIL]");
+    if (thumbnailStart != -1) {
+        thumbnailBase64 = fileContent.mid(thumbnailStart + 11);
+    }
+
+    if (fileName.isEmpty() || fileDataBase64.isEmpty()) return;
+
+    // 解码文件数据
+    QByteArray fileData = QByteArray::fromBase64(fileDataBase64.toUtf8());
+
+    bool isImage = (fileType == "image");
+    bool isVideo = (fileType == "video");
+
+    // 添加时间戳
+    QString timestamp = QTime::currentTime().toString("hh:mm:ss");
+
+    // 获取发送者头像
+    QString avatarHtml = "";
+    QPixmap senderAvatar = getUserAvatar(senderUsername);
+    if (!senderAvatar.isNull()) {
+        senderAvatar = cropToSquare(senderAvatar);
+        senderAvatar = senderAvatar.scaled(32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        QByteArray byteArray;
+        QBuffer buffer(&byteArray);
+        buffer.open(QIODevice::WriteOnly);
+        senderAvatar.save(&buffer, "PNG");
+        QString base64Image = QString::fromLatin1(byteArray.toBase64().data());
+        avatarHtml = QString("<img src='data:image/png;base64,%1' width='32' height='32' "
+                            "style='vertical-align: middle; margin-right: 8px; border-radius: 16px; "
+                            "border: 1px solid #4CAF50; box-shadow: 0 2px 4px rgba(0,0,0,0.1);' />").arg(base64Image);
+    } else {
+        avatarHtml = "<div style='width: 32px; height: 32px; background: linear-gradient(135deg, #4CAF50, #45a049); "
+                    "border-radius: 16px; margin-right: 8px; display: flex; align-items: center; "
+                    "justify-content: center; font-size: 16px; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>👤</div>";
+    }
+
+    // 根据文件类型显示不同内容
+    QString fileMessage;
+    if (isImage) {
+        QString thumbnailHtml = "";
+        if (!thumbnailBase64.isEmpty()) {
+            thumbnailHtml = QString("<img src='data:image/jpeg;base64,%1' "
+                                   "style='max-width: 120px; max-height: 120px; margin-top: 8px; "
+                                   "border-radius: 8px; border: 1px solid #ddd; "
+                                   "box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer;' "
+                                   "onclick='this.style.maxWidth=\"none\"; this.style.maxHeight=\"none\"'/>")
+                                   .arg(thumbnailBase64);
+        }
+
+        fileMessage = QString("<div style='margin: 12px 0; display: flex; align-items: flex-start;'>"
+                             "%1"
+                             "<div style='flex: 1;'>"
+                             "<div style='display: flex; align-items: center; margin-bottom: 4px;'>"
+                             "<span style='color: #4CAF50; font-weight: bold; font-size: 14px;'>%2</span>"
+                             "<span style='color: #999; font-size: 11px; margin-left: 8px;'>%3</span>"
+                             "</div>"
+                             "<div style='background: #f9f9f9; padding: 12px; border-radius: 12px; "
+                             "border: 1px dashed #4CAF50;'>"
+                             "<div style='color: #666; margin-bottom: 8px;'>"
+                             "📸 发送了图片：<b>%4</b> (%5 KB)"
+                             "</div>"
+                             "%6"
+                             "<br>"
+                             "<button id='save_btn_%7_%4' style='margin-top: 8px; padding: 6px 12px; "
+                             "background: linear-gradient(135deg, #4CAF50, #45a049); "
+                             "color: white; border: none; border-radius: 6px; "
+                             "font-size: 12px; cursor: pointer;'>"
+                             "💾 保存图片"
+                             "</button>"
+                             "</div>"
+                             "</div>"
+                             "</div>")
+                             .arg(avatarHtml)
+                             .arg(senderUsername)
+                             .arg(timestamp)
+                             .arg(fileName)
+                             .arg(fileSize / 1024)
+                             .arg(thumbnailHtml)
+                             .arg(senderUsername);
+    } else if (isVideo) {
+        fileMessage = QString("<div style='margin: 12px 0; display: flex; align-items: flex-start;'>"
+                             "%1"
+                             "<div style='flex: 1;'>"
+                             "<div style='display: flex; align-items: center; margin-bottom: 4px;'>"
+                             "<span style='color: #4CAF50; font-weight: bold; font-size: 14px;'>%2</span>"
+                             "<span style='color: #999; font-size: 11px; margin-left: 8px;'>%3</span>"
+                             "</div>"
+                             "<div style='background: #f9f9f9; padding: 12px; border-radius: 12px; "
+                             "border: 1px dashed #4CAF50;'>"
+                             "<div style='color: #666; margin-bottom: 8px;'>"
+                             "🎬 发送了视频：<b>%4</b> (%5 KB)"
+                             "</div>"
+                             "<div style='width: 120px; height: 120px; "
+                             "background: linear-gradient(135deg, #333, #555); "
+                             "border-radius: 8px; margin-top: 8px; display: flex; "
+                             "align-items: center; justify-content: center; color: white; "
+                             "font-size: 24px;'>"
+                             "🎬"
+                             "</div>"
+                             "<br>"
+                             "<button id='save_btn_%6_%4' style='margin-top: 8px; padding: 6px 12px; "
+                             "background: linear-gradient(135deg, #4CAF50, #45a049); "
+                             "color: white; border: none; border-radius: 6px; "
+                             "font-size: 12px; cursor: pointer;'>"
+                             "📥 保存视频"
+                             "</button>"
+                             "</div>"
+                             "</div>"
+                             "</div>")
+                             .arg(avatarHtml)
+                             .arg(senderUsername)
+                             .arg(timestamp)
+                             .arg(fileName)
+                             .arg(fileSize / 1024)
+                             .arg(senderUsername);
+    } else {
+        fileMessage = QString("<div style='margin: 12px 0; display: flex; align-items: flex-start;'>"
+                             "%1"
+                             "<div style='flex: 1;'>"
+                             "<div style='display: flex; align-items: center; margin-bottom: 4px;'>"
+                             "<span style='color: #4CAF50; font-weight: bold; font-size: 14px;'>%2</span>"
+                             "<span style='color: #999; font-size: 11px; margin-left: 8px;'>%3</span>"
+                             "</div>"
+                             "<div style='background: #f9f9f9; padding: 12px; border-radius: 12px; "
+                             "border: 1px dashed #4CAF50;'>"
+                             "<div style='color: #666; margin-bottom: 8px;'>"
+                             "📁 发送了文件：<b>%4</b> (%5 KB)"
+                             "</div>"
+                             "<div style='width: 120px; height: 120px; "
+                             "background: linear-gradient(135deg, #e0e0e0, #f0f0f0); "
+                             "border-radius: 8px; margin-top: 8px; display: flex; "
+                             "align-items: center; justify-content: center; color: #666; "
+                             "font-size: 32px;'>"
+                             "📁"
+                             "</div>"
+                             "<br>"
+                             "<button id='save_btn_%6_%4' style='margin-top: 8px; padding: 6px 12px; "
+                             "background: linear-gradient(135deg, #4CAF50, #45a049); "
+                             "color: white; border: none; border-radius: 6px; "
+                             "font-size: 12px; cursor: pointer;'>"
+                             "💾 保存文件"
+                             "</button>"
+                             "</div>"
+                             "</div>"
+                             "</div>")
+                             .arg(avatarHtml)
+                             .arg(senderUsername)
+                             .arg(timestamp)
+                             .arg(fileName)
+                             .arg(fileSize / 1024)
+                             .arg(senderUsername);
+    }
+
+    // 显示文件消息
+    chatHistory->append(fileMessage);
+    chatHistory->moveCursor(QTextCursor::End);
+
+    // 临时存储文件数据，等待用户保存
+    QString fileKey = QString("%1_%2").arg(senderUsername).arg(fileName);
+    receivedFiles[fileKey] = QString::fromLatin1(fileData.toBase64().data());
 }
 
 void ChatWindow::onPeerDiscovered(const QString &ip, const QString &username) {
@@ -1054,17 +1197,30 @@ void ChatWindow::onSendFile() {
         QByteArray base64Data = fileData.toBase64();
 
         // 构造文件传输消息
-        QString fileMessage = QString("[%1]: [FILE]%2[FILENAME]%3[FILEEXTENSION]%4[FILETYPE]%5[FILESIZE]%6[FILEDATA]%7[/FILE]")
+        QString fileMessage = QString("[%1]: [FILE][FILENAME]%2[FILEEXTENSION]%3[FILETYPE]%4[FILESIZE]%5[FILEDATA]%6[/FILE]")
                              .arg(username)
                              .arg(displayName)
                              .arg(fileExtension)
                              .arg(isImage ? "image" : (isVideo ? "video" : "other"))
                              .arg(fileData.size())
-                             .arg(QString::fromUtf8(base64Data))
-                             .arg(isImage ? "[THUMBNAIL]" + generateThumbnail(fileData, isImage) : "");
+                             .arg(QString::fromUtf8(base64Data));
 
-        // 发送文件消息
-        networkManager->sendMessageToAllPeers(fileMessage);
+        // 添加缩略图（如果是图片）
+        if (isImage) {
+            QString thumbnail = generateThumbnail(fileData, isImage);
+            if (!thumbnail.isEmpty()) {
+                fileMessage.insert(fileMessage.indexOf("[/FILE]"), "[THUMBNAIL]" + thumbnail);
+            }
+        }
+
+        // 根据是否为服务器模式决定发送方式
+        if (isServer) {
+            // 服务器模式下，直接处理文件（相当于转发给自己）
+            handleFileMessage(fileMessage);
+        } else {
+            // 客户端模式下，发送文件到服务器
+            networkManager->sendFileToServer(fileMessage);
+        }
 
         // 在聊天历史中显示发送的文件
         showSentFile(displayName, fileExtension, fileData.size(), isImage, isVideo);
@@ -1186,23 +1342,39 @@ void ChatWindow::saveReceivedFile(const QString &sender, const QString &filename
         // 解码文件数据
         QByteArray fileData = QByteArray::fromBase64(receivedFiles[fileKey].toLatin1());
 
-        // 打开保存文件对话框
-        QString saveFileName = QFileDialog::getSaveFileName(this, tr("保存文件"), filename, tr("所有文件 (*)"));
+        // 使用设置的下载路径或默认路径
+        QString saveDir = downloadPath.isEmpty() ? getDefaultDownloadPath() : downloadPath;
 
-        if (!saveFileName.isEmpty()) {
-            QFile saveFile(saveFileName);
-            if (saveFile.open(QIODevice::WriteOnly)) {
-                saveFile.write(fileData);
-                saveFile.close();
+        // 构造保存文件路径
+        QString saveFileName = QDir(saveDir).filePath(filename);
 
-                // 显示保存成功消息
-                QMessageBox::information(this, "成功",
-                                        QString("文件已保存到：\n%1\n\n大小：%2 KB")
-                                        .arg(saveFileName)
-                                        .arg(fileData.size() / 1024.0, 0, 'f', 1));
+        // 检查文件是否已存在，如果存在则添加序号
+        QFileInfo fileInfo(saveFileName);
+        QString baseName = fileInfo.baseName();
+        QString suffix = fileInfo.suffix();
+        int counter = 1;
+
+        while (QFile::exists(saveFileName)) {
+            if (suffix.isEmpty()) {
+                saveFileName = QDir(saveDir).filePath(QString("%1_%2").arg(baseName).arg(counter));
             } else {
-                QMessageBox::warning(this, "错误", "无法保存文件：" + saveFileName);
+                saveFileName = QDir(saveDir).filePath(QString("%1_%2.%3").arg(baseName).arg(counter).arg(suffix));
             }
+            counter++;
+        }
+
+        QFile saveFile(saveFileName);
+        if (saveFile.open(QIODevice::WriteOnly)) {
+            saveFile.write(fileData);
+            saveFile.close();
+
+            // 显示保存成功消息
+            QMessageBox::information(this, "成功",
+                                    QString("文件已保存到：\n%1\n\n大小：%2 KB")
+                                    .arg(saveFileName)
+                                    .arg(fileData.size() / 1024.0, 0, 'f', 1));
+        } else {
+            QMessageBox::warning(this, "错误", "无法保存文件：" + saveFileName);
         }
 
         // 从临时存储中移除
@@ -1232,4 +1404,32 @@ QString ChatWindow::generateThumbnail(const QByteArray &fileData, bool isImage) 
     thumbnail.save(&buffer, "JPEG", 80); // 使用JPEG格式压缩
 
     return QString::fromLatin1(thumbData.toBase64().data());
+}
+
+QString ChatWindow::getDefaultDownloadPath() {
+    // 获取系统的下载目录
+    QString downloadDir = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    QDir dir(downloadDir);
+
+    // 创建专门的聊天文件下载目录
+    QString chatDownloadDir = dir.filePath("P2PChatDownloads");
+    QDir chatDir(chatDownloadDir);
+
+    if (!chatDir.exists()) {
+        chatDir.mkpath(".");
+    }
+
+    return chatDownloadDir;
+}
+
+QString ChatWindow::selectDownloadPath() {
+    QString dir = QFileDialog::getExistingDirectory(this, tr("选择文件下载目录"),
+                                                   downloadPath,
+                                                   QFileDialog::ShowDirsOnly
+                                                   | QFileDialog::DontResolveSymlinks);
+    if (!dir.isEmpty()) {
+        downloadPath = dir;
+        QMessageBox::information(this, "提示", QString("下载目录已设置为: %1").arg(downloadPath));
+    }
+    return downloadPath;
 }

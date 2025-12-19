@@ -46,6 +46,8 @@ private slots:
     QString generateThumbnail(const QByteArray &fileData, bool isImage);
 
 private:
+    void AcceptRichText(bool cond);
+
     void setupUI();
     void setupConnections();
     void createEmojiMenu();
@@ -70,11 +72,13 @@ private:
     QMenu *emojiMenu{};
     QPushButton *avatarButton{};
     QPushButton *fileButton{};
+    QPushButton *serverModeButton{};  // 服务器模式按钮
 
     // 网络和用户数据
     NetworkManager *networkManager;
     QString username;
     QString avatarPath;
+    bool isServer = false;  // 服务器模式标识
 
     // 表情相关
     QMap<QString, QString> emojiMap;
@@ -86,6 +90,11 @@ private:
     // 文件传输
     QString currentFilePath;
     QMap<QString, QString> receivedFiles;  // 用户名_文件名 -> base64数据
+
+    QString getDefaultDownloadPath();  // 获取默认下载路径
+    QString selectDownloadPath();      // 选择下载路径
+    QPushButton *downloadPathButton{}; // 下载路径设置按钮
+    QString downloadPath;              // 当前下载路径
 };
 
 #endif // CHATWINDOW_H

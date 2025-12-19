@@ -2,9 +2,11 @@
 #include <QHostAddress>
 #include <QNetworkInterface>
 #include <QDebug>
+#include <QTcpServer>
+#include <QTcpSocket>
 
 NetworkManager::NetworkManager(QObject *parent, const QString &username)
-    : QObject(parent), localUsername(username) {
+    : QObject(parent), localUsername(username), isServer(false) {
 
     // 获取本地IP
     localIP = QHostAddress(QHostAddress::LocalHost).toString();
@@ -41,6 +43,10 @@ NetworkManager::NetworkManager(QObject *parent, const QString &username)
     tcpServer = new TCPServer(this, chatPort);
     connect(tcpServer, &TCPServer::messageReceived, this, &NetworkManager::onTCPMessageReceived);
 
+    // 初始化文件服务器
+    fileServer = new QTcpServer(this);
+    connect(fileServer, &QTcpServer::newConnection, this, &NetworkManager::handleNewConnection);
+
     qDebug() << "NetworkManager初始化完成";
     qDebug() << "用户名:" << localUsername;
     qDebug() << "聊天端口:" << chatPort;
@@ -71,6 +77,18 @@ void NetworkManager::sendMessageToAllPeers(const QString &message) {
     }
 }
 
+// 新增方法：发送文件到服务器
+void NetworkManager::sendFileToServer(const QString &fileMessage) {
+    // 查找服务器节点（假设第一个节点是服务器）
+    if (!peers.isEmpty()) {
+        auto serverIt = peers.begin();
+        QString serverIP = serverIt.value().ip;
+
+        TCPClient *client = new TCPClient(this);
+        connect(client, &TCPClient::destroyed, client, &QObject::deleteLater);
+        client->sendMessage(serverIP, chatPort, "[FILE_FORWARD]:" + fileMessage);
+    }
+}
 
 void NetworkManager::onUDPPacketReceived(const QString &ip, const QString &username) {
     qDebug() << "UDP发现新节点: IP =" << ip << "用户名 =" << username;
@@ -95,6 +113,64 @@ void NetworkManager::onUDPPacketReceived(const QString &ip, const QString &usern
 }
 
 void NetworkManager::onTCPMessageReceived(const QString &message) {
-    qDebug() << "收到TCP消息:" << message;
-    emit messageReceived(message);
+    if (message.startsWith("[FILE_FORWARD]:")) {
+        // 这是转发的文件消息
+        QString fileMessage = message.mid(15); // 移除"[FILE_FORWARD]:"前缀
+        emit fileReceived(fileMessage);
+    } else {
+        qDebug() << "收到TCP消息:" << message;
+        emit messageReceived(message);
+    }
+}
+
+// 新增方法
+void NetworkManager::setIsServer(bool server) {
+    isServer = server;
+    if (isServer) {
+        if (fileServer->listen(QHostAddress::Any, 12347)) {
+            qDebug() << "文件服务器启动在端口: 12347";
+        } else {
+            qCritical() << "无法启动文件服务器:" << fileServer->errorString();
+        }
+    }
+}
+
+bool NetworkManager::getIsServer() const {
+    return isServer;
+}
+
+// 新增槽函数：处理新连接
+void NetworkManager::handleNewConnection() {
+    QTcpSocket *clientSocket = fileServer->nextPendingConnection();
+    clients.append(clientSocket);
+    connect(clientSocket, &QTcpSocket::readyRead, this, &NetworkManager::handleClientData);
+    connect(clientSocket, &QTcpSocket::disconnected, [=]() {
+        clients.removeAll(clientSocket);
+        clientSocket->deleteLater();
+    });
+}
+
+// 新增槽函数：处理客户端数据
+void NetworkManager::handleClientData() {
+    QTcpSocket *clientSocket = qobject_cast<QTcpSocket*>(sender());
+    if (!clientSocket)
+        return;
+
+    QByteArray data = clientSocket->readAll();
+    QString message = QString::fromUtf8(data);
+
+    if (message.startsWith("[FILE_FORWARD]:")) {
+        // 这是从客户端发来的文件，需要转发给所有其他客户端
+        QString fileMessage = message.mid(15); // 移除"[FILE_FORWARD]:"前缀
+
+        // 转发给所有连接的客户端（除了发送者）
+        for (QTcpSocket *socket : clients) {
+            if (socket != clientSocket) {
+                socket->write(("[FILE_FORWARD]:" + fileMessage).toUtf8());
+            }
+        }
+
+        // 同时在本地触发文件接收信号
+        emit fileReceived(fileMessage);
+    }
 }
